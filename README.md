@@ -4,8 +4,8 @@ A small node suite for ComfyUI. Featuring the following:
 
 | Node | Description |
 | --- | --- |
-| Current date node | Useful for file saving organization |
-| Empty latent randomizer | Useful for exporting a random latent width and height based on a fixed set |
+| Current date node | ###### Useful for file saving organization |
+| Empty latent randomizer | > Useful for exporting a random latent width and height based on a fixed set |
 
 ---
 
