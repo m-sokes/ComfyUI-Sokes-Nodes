@@ -2,10 +2,9 @@ ComfyUI Sokes Nodes
 =======
 A small node suite for ComfyUI. Featuring the following:
 
-_Current date node_
+**Current date node**
 > Useful for file saving organization
-
-
+—
 **Empty latent node with 9 inputs and random number input**
 > Useful for exporting a random latent width and height based on a fixed set
 
