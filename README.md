@@ -19,8 +19,7 @@ ComfyUI is a node based backend and GUI for Stable Diffusion.
 
 ### Instalation
 
-Installation
-To install and use these nodes, follow these steps:
+To install nodes follow these steps:
 
 1. Open a terminal or a command line interface.
 2. Navigate to the ComfyUI/custom_nodes/ directory.
