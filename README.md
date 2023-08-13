@@ -34,4 +34,4 @@ To install nodes follow these steps:
 ---
 
 ### Future Node Concepts
-* SDXL Prompt Styler node with custom categories based on json file(s)
+- [ ] SDXL Prompt Styler node with custom categories based on json file(s)
