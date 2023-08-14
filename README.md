@@ -5,7 +5,7 @@ A small node suite for ComfyUI. Featuring the following:
 | Node | Description |
 | --- | --- |
 | **Current Date** | Useful for file saving organization |
-| **9 Input Empty Latent Randomizer** | Useful for exporting a random latent dimentions based on a fixed set |
+| **Empty Latent Randomizer with up to 9 Inputs** | Useful for exporting a random latent dimentions based on a fixed set |
 
 ---
 
