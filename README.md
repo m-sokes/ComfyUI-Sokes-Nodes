@@ -1,6 +1,6 @@
 ComfyUI Sokes Nodes
 =======
-A small node suite for ComfyUI. Featuring the following:
+A small node suite for ComfyUI featuring the following:
 
 | Node | Description |
 | --- | --- |
