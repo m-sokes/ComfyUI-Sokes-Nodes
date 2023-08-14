@@ -11,10 +11,9 @@ A small node suite for ComfyUI featuring the following:
 
 ### What is ComfyUI?
 
-ComfyUI is a node based backend and GUI for Stable Diffusion.
-[ComfyUI Repo](https://github.com/comfyanonymous/ComfyUI)
+[ComfyUI](https://github.com/comfyanonymous/ComfyUI) is a node based backend and GUI for Stable Diffusion.
 
-*Recommended ComfyUI extension [ComfyUI-Manager](https://github.com/ltdrdata/ComfyUI-Manager)*
+*Recommended ComfyUI extension: [ComfyUI-Manager](https://github.com/ltdrdata/ComfyUI-Manager)*
 
 ---
 
