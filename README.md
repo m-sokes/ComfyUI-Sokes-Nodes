@@ -9,14 +9,6 @@ A small node suite for ComfyUI featuring the following nodes:
 
 ---
 
-### What is ComfyUI?
-
-[ComfyUI](https://github.com/comfyanonymous/ComfyUI) is a node based backend and GUI for Stable Diffusion.
-
-*Recommended ComfyUI extension: [ComfyUI-Manager](https://github.com/ltdrdata/ComfyUI-Manager)*
-
----
-
 ### Instalation
 
 To install nodes follow these steps:
@@ -25,6 +17,20 @@ To install nodes follow these steps:
 2. Navigate to the ComfyUI/custom_nodes/ directory.
 3. Run the following command: ```git clone https://github.com/m-sokes/ComfyUI-Sokes-Nodes.git```
 4. Restart ComfyUI.
+
+---
+
+### What is ComfyUI?
+
+[ComfyUI](https://github.com/comfyanonymous/ComfyUI) is a node based backend and GUI for Stable Diffusion.
+
+*Recommended ComfyUI extension: [ComfyUI-Manager](https://github.com/ltdrdata/ComfyUI-Manager)*
+
+---
+
+### Why a 🦬?
+
+Cause there's no offical musk ox emoji. I'll reached out to the Unicode Consortium.
 
 ---
 
