@@ -1,4 +1,4 @@
-ComfyUI Sokes Nodes
+ComfyUI Sokes Nodes 🦬
 =======
 A small node suite for ComfyUI featuring the following nodes:
 
