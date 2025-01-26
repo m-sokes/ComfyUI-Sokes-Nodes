@@ -6,6 +6,7 @@ A small node suite for ComfyUI featuring the following nodes:
 | --- | --- |
 | **Current Date with Custom Formatting** | Useful for file saving organization. E.g. YYYY-MM-DD |
 | **Empty Latent Selector (9 Inputs)** | Useful for exporting a random latent dimentions based on a fixed set |
+| **Replace Text with RegEx** | Useful for using RegEx for text replacement |
 | **Random Image with Path** | Useful for grabbing a random image and referencing the path later in the flow |
 
 ---
