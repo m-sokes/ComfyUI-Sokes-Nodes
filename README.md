@@ -28,9 +28,9 @@ To install nodes follow these steps:
 
 ---
 
-### Why a 🦬?
+### Why a bison 🦬 emoji?
 
-Cause there's no offical musk ox emoji. I'll reached out to the Unicode Consortium.
+Cause there's no offical musk ox emoji...I'll reached out to the Unicode Consortium.
 
 ---
 
