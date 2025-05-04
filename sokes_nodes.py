@@ -8,7 +8,21 @@ import numpy as np # for image manipulation in torch
 import cv2 # for image processing
 from PIL import Image, ImageOps # load random image, orient image
 
-# Current Date | Sokes 🦬
+# Might need to: pip install webcolors colormath
+import webcolors
+from colormath.color_objects import sRGBColor, LabColor
+from colormath.color_conversions import convert_color
+from colormath.color_diff import delta_e_cie1976, delta_e_cie2000
+
+from .sokes_color_maps import css3_names_to_hex, css3_hex_to_names, human_readable_map, explicit_targets_for_comparison
+
+import numpy as np
+if not hasattr(np, "asscalar"):
+        np.asscalar = lambda a: a.item()        
+
+
+##############################################################
+# START Current Date | Sokes 🦬
 
 class current_date_sokes:
     def __init__(self):
@@ -52,9 +66,12 @@ class current_date_sokes:
         # Force re-execution
         return (datetime.now().timestamp(),)
 
+# END Current Date | Sokes 🦬
+##############################################################
+
 
 ##############################################################
-# START: Latent Input Swtich x9 | Sokes 🦬
+# START Latent Input Swtich x9 | Sokes 🦬
 
 class latent_input_switch_9x_sokes:
     @classmethod
@@ -103,11 +120,11 @@ class latent_input_switch_9x_sokes:
         else:
             return (latent_0, )
 
-# END: Latent Input Swtich x9 | Sokes 🦬
+# END Latent Input Swtich x9 | Sokes 🦬
 ##############################################################
 
 ##############################################################
-# START: Replace Text with Regex | Sokes 🦬
+# START Replace Text with Regex | Sokes 🦬
 
 class replace_text_regex_sokes:
     @ classmethod
@@ -127,11 +144,11 @@ class replace_text_regex_sokes:
         return (re.sub(regex_pattern, new, text),)
 
 
-# END: Replace Text with Regex | Sokes 🦬
+# END Replace Text with Regex | Sokes 🦬
 ##############################################################
 
 ##############################################################
-# START: Load Random Image | Sokes 🦬
+# START Load Random Image | Sokes 🦬
 
 class load_random_image_sokes:
     def __init__(self):
@@ -142,85 +159,169 @@ class load_random_image_sokes:
         return {
             "required": {
                 "folder": ("STRING", {"default": "."}),
-                "n_images": ("INT", {"default": 1, "min": -1, "max": 100}),
-                "seed": ("INT", {"default": 0, "min": 0, "max": 100000}),
+                "n_images": ("INT", {"default": 1, "min": 1, "max": 100}),
+                "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff}),
                 "sort": ("BOOLEAN", {"default": False}),
             }
         }
 
-    CATEGORY = "Sokes 🦬"
-    RETURN_TYPES = ("IMAGE", "LIST")
-    RETURN_NAMES = ("image", "image_path")
+    CATEGORY = "Sokes 🦬/Loaders"
+    RETURN_TYPES = ("IMAGE", "MASK", "LIST")
+    RETURN_NAMES = ("image", "mask", "image_path")
     FUNCTION = "load_image"
 
     def load_image(self, folder, n_images, seed, sort):
-        # Get all files in the folder
-        image_paths = [os.path.join(folder, f) for f in os.listdir(folder)]
-        image_paths = [f for f in image_paths if os.path.isfile(f)]
-        image_paths = [f for f in image_paths if any([f.endswith(ext) for ext in self.img_extensions])]
+        # --- Folder Resolution (same as before) ---
+        if not os.path.isdir(folder):
+            try:
+                input_dir = folder_paths.get_input_directory()
+                resolved_folder = folder_paths.get_annotated_filepath(folder) # More robust way
+                if resolved_folder and os.path.isdir(resolved_folder):
+                     folder = resolved_folder
+                elif os.path.isdir(os.path.join(input_dir, folder)): # Fallback for simple relative paths
+                    folder = os.path.join(input_dir, folder)
+                else:
+                     if not os.path.isdir(folder):
+                          raise FileNotFoundError(f"Folder '{folder}' not found directly or relative to input directory.")
+            except Exception as e:
+                 raise Exception(f"Error resolving folder '{folder}'. Ensure it exists or is relative to ComfyUI's input directory. Error: {e}")
 
-        # Validate images
+        # --- File Discovery (same as before) ---
+        try:
+            all_files = [os.path.join(folder, f) for f in os.listdir(folder)]
+            image_paths = [f for f in all_files if os.path.isfile(f)]
+            image_paths = [f for f in image_paths if any([f.lower().endswith(ext) for ext in self.img_extensions])]
+        except Exception as e:
+            raise Exception(f"Error listing files in folder '{folder}': {e}")
+
+        # --- Image Validation (same as before) ---
         valid_image_paths = []
         for f in image_paths:
-            if imghdr.what(f):
-                valid_image_paths.append(f)
-            else:
-                try:
-                    img = Image.open(f)
-                    img.verify()  # Verify that the file is a valid image
+            try:
+                is_image = imghdr.what(f)
+                if not is_image:
+                    try:
+                        img_test = Image.open(f)
+                        img_test.verify()
+                        is_image = True
+                    except Exception:
+                        is_image = False
+                if is_image:
                     valid_image_paths.append(f)
-                except Exception as e:
-                    print(f"Skipping invalid image: {f} - {str(e)}")
+            except Exception as e:
+                 print(f"Skipping potentially corrupt image: {f} - {str(e)}")
 
-        # Check if no valid images were found
         if not valid_image_paths:
             raise ValueError(f"No valid images found in folder: {folder}")
 
-        # Shuffle or sort the images
-        random.seed(seed)
-        random.shuffle(valid_image_paths)
-
-        if n_images > 0:
-            valid_image_paths = valid_image_paths[:n_images]
-
-        if sort:
-            valid_image_paths = sorted(valid_image_paths)
-
-        # Load and process images
-        imgs = []
-        for image_path in valid_image_paths:
-            try:
-                img = Image.open(image_path)
-                img = ImageOps.exif_transpose(img)
-            except Exception as e:
-                print(f"Error during EXIF transpose for {image_path}: {str(e)}")
-                continue  # Skip this image on error
-
-            if img.mode == 'I':
-                img = img.point(lambda i: i * (1 / 255))
-
-            image = img.convert("RGB")
-            image = np.array(image).astype(np.float32) / 255.0
-            imgs.append(image)
-
-        if not imgs:
-            raise ValueError("No images were successfully loaded.")
-
-        # Process images into a single tensor
-        if len(imgs) > 1:
-            imgs = create_same_sized_crops(imgs, target_n_pixels=1024**2)
-            imgs = [torch.from_numpy(img)[None,] for img in imgs]
-            output_image = torch.cat(imgs, dim=0)
+        # --- Shuffle/Sort and Select (same as before) ---
+        if not sort:
+            random.seed(seed)
+            random.shuffle(valid_image_paths)
         else:
-            output_image = torch.from_numpy(imgs[0])[None,]
+             valid_image_paths = sorted(valid_image_paths)
 
-        #filenames_str = ", ".join(valid_image_paths)  # Comma-separated
+        num_available = len(valid_image_paths)
+        actual_n_images = min(n_images, num_available)
+        if actual_n_images < n_images and n_images > 0:
+             print(f"Warning: Requested {n_images} images, but only {num_available} were found/valid in '{folder}'. Loading {actual_n_images}.")
+        elif n_images <= 0:
+             actual_n_images = num_available
 
-        return (output_image, valid_image_paths)
+        selected_paths = valid_image_paths[:actual_n_images]
 
-# END: Load Random Image | Sokes 🦬
-##############################################################
+        # --- Load and Process Images and Masks ---
+        output_images = []
+        output_masks = []
+        loaded_paths = []
+        first_image_shape = None
 
+        for image_path in selected_paths:
+            try:
+                img_pil = Image.open(image_path)
+                img_pil = ImageOps.exif_transpose(img_pil) # Handle orientation
+
+                # --- Image Processing ---
+                # **MODIFICATION: Convert to RGBA to preserve/add alpha channel**
+                image_rgba = img_pil.convert("RGBA")
+                image_np = np.array(image_rgba).astype(np.float32) / 255.0 # Shape: (H, W, 4)
+                # ComfyUI IMAGE format is Batch, Height, Width, Channel (BHWC)
+                image_tensor = torch.from_numpy(image_np)[None,] # Shape: [1, H, W, 4]
+
+                # --- Mask Processing (Remains the same) ---
+                # Checks the *original* PIL image for alpha before RGBA conversion
+                mask_tensor = None
+                # ComfyUI MASK format is Batch, Height, Width (BHW)
+                if 'A' in img_pil.getbands() or 'a' in img_pil.getbands(): # Check original bands
+                    mask = img_pil.getchannel('A')
+                    mask_np = np.array(mask).astype(np.float32) / 255.0 # Shape: (H, W)
+                    mask_tensor = torch.from_numpy(mask_np)[None,] # Shape: [1, H, W]
+                else:
+                    mask_shape = (image_tensor.shape[1], image_tensor.shape[2]) # Get H, W
+                    mask_np = np.ones(mask_shape, dtype=np.float32)
+                    mask_tensor = torch.from_numpy(mask_np)[None,] # Shape: [1, H, W]
+
+                # --- Batch Consistency Check (Checks H, W - still valid) ---
+                current_shape = image_tensor.shape[1:3]
+                if first_image_shape is None:
+                    first_image_shape = current_shape
+                elif current_shape != first_image_shape:
+                    print(f"⚠️ Warning: Image {os.path.basename(image_path)} has different dimensions ({current_shape}) than the first image ({first_image_shape}). Batching may fail or produce unexpected results downstream. Consider resizing images beforehand.")
+                    # Optional resizing logic could go here, applied to both image_tensor (4ch) and mask_tensor (1ch)
+
+                output_images.append(image_tensor)
+                output_masks.append(mask_tensor)
+                loaded_paths.append(image_path)
+
+            except Exception as e:
+                print(f"❌ Error loading or processing image {image_path}: {str(e)}. Skipping.")
+                continue
+
+        if not output_images:
+            raise ValueError("No images were successfully loaded after processing.")
+
+        # --- Collate Batches (same as before) ---
+        final_image_batch = torch.cat(output_images, dim=0) # Shape: [B, H, W, 4]
+        final_mask_batch = torch.cat(output_masks, dim=0)  # Shape: [B, H, W]
+
+        return (final_image_batch, final_mask_batch, loaded_paths)
+
+    # --- IS_CHANGED (same as before) ---
+    @classmethod
+    def IS_CHANGED(s, folder, n_images, seed, sort):
+        try:
+            resolved_folder = None
+            if not os.path.isdir(folder):
+                try:
+                    resolved_folder = folder_paths.get_annotated_filepath(folder)
+                    if not resolved_folder or not os.path.isdir(resolved_folder):
+                       input_dir = folder_paths.get_input_directory()
+                       resolved_folder = os.path.join(input_dir, folder)
+                       if not os.path.isdir(resolved_folder):
+                            resolved_folder = folder
+                except:
+                    resolved_folder = folder
+
+            if not os.path.isdir(resolved_folder):
+                 return float("NaN")
+
+            all_files = [os.path.join(resolved_folder, f) for f in os.listdir(resolved_folder)]
+            image_paths = [f for f in all_files if os.path.isfile(f)]
+            img_extensions_lower = [ext.lower() for ext in s().img_extensions]
+            image_paths = [f for f in image_paths if f.lower().endswith(tuple(img_extensions_lower))]
+            image_paths = sorted(image_paths)
+            mtimes = [os.path.getmtime(f) for f in image_paths]
+            file_info_tuple = tuple(zip(image_paths, mtimes))
+            file_list_hash = hash(file_info_tuple)
+
+            if not sort:
+                return f"{file_list_hash}_{seed}_{n_images}"
+            else:
+                return f"{file_list_hash}_{n_images}"
+
+        except Exception as e:
+             print(f"IS_CHANGED Error: {e}")
+             return float("NaN")
 
 def round_to_nearest_multiple(number, multiple):
     return int(multiple * round(number / multiple))
@@ -271,14 +372,113 @@ def create_same_sized_crops(imgs, target_n_pixels=2048**2):
     
     return resized_imgs
 
+# END Load Random Image | Sokes 🦬
+##############################################################
+
+##############################################################
+# START Hex to Color Name | Sokes 🦬
+
+class hex_to_color_name_sokes:
+    CATEGORY = "Sokes 🦬"
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("color_name",)
+    FUNCTION = "hex_to_color_name_fn"
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "hex_color": (
+                    "STRING",
+                    {"default": "#FFFFFF", "multiline": False},
+                )
+            },
+            "optional": {
+                "use_css_name": ("BOOLEAN", {"default": False})
+            }
+        }
+
+    def hex_to_color_name_fn(self, hex_color, use_css_name=False):
+        # ... Input Sanitization ... (no changes needed here) ...
+        if not hex_color: return ("Input hex color is empty.",)
+        hex_color = hex_color.strip()
+        if not hex_color.startswith("#"): hex_color = "#" + hex_color
+        if len(hex_color) == 4: hex_color = f"#{hex_color[1]*2}{hex_color[2]*2}{hex_color[3]*2}"
+        if len(hex_color) != 7: return (f"Invalid hex format: {hex_color}",)
+
+
+        # --- 1) Exact CSS3 Match ---
+        try:
+            standard_name = webcolors.hex_to_name(hex_color, spec="css3")
+            final_color_name = standard_name
+            if not use_css_name:
+                 final_color_name = human_readable_map.get(standard_name, standard_name)
+                 if final_color_name is None: final_color_name = standard_name
+            return (final_color_name,)
+        except ValueError:
+            # --- 2) Fallback: Find Nearest Color ---
+            try:
+                requested_rgb = webcolors.hex_to_rgb(hex_color)
+                requested_lab = convert_color(sRGBColor(*requested_rgb, is_upscaled=True), LabColor)
+            except Exception as e: return (f"Invalid input hex/conversion error: {e}",)
+
+            min_dist = float('inf')
+            closest_name = None
+            checked_hex_codes = set()
+
+            # --- Check EXPLICIT TARGETS first ---
+            for target_name, target_hex in explicit_targets_for_comparison.items():
+                 if len(target_hex) == 4: target_hex = f"#{target_hex[1]*2}{target_hex[2]*2}{target_hex[3]*2}"
+                 if target_hex in checked_hex_codes: continue
+                 try:
+                     target_rgb = webcolors.hex_to_rgb(target_hex)
+                     target_lab = convert_color(sRGBColor(*target_rgb, is_upscaled=True), LabColor)
+                     d = delta_e_cie2000(requested_lab, target_lab)
+                     if d < min_dist:
+                         min_dist = d
+                         closest_name = target_name
+                     checked_hex_codes.add(target_hex)
+                 except Exception as e: print(f"Warn: Cannot process explicit target {target_name}: {e}")
+
+
+            # --- Iterate through STANDARD CSS3 colors ---
+            # <<< Use the imported css3_names_to_hex dictionary here >>>
+            for name, candidate_hex in css3_names_to_hex.items():
+                 if len(candidate_hex) == 4: candidate_hex = f"#{candidate_hex[1]*2}{candidate_hex[2]*2}{candidate_hex[3]*2}"
+                 if candidate_hex in checked_hex_codes: continue # Skip if already checked
+                 try:
+                    cand_rgb = webcolors.hex_to_rgb(candidate_hex)
+                    cand_lab = convert_color(sRGBColor(*cand_rgb, is_upscaled=True), LabColor)
+                    d = delta_e_cie2000(requested_lab, cand_lab)
+                    if d < min_dist:
+                        min_dist = d
+                        closest_name = name # Update to the standard CSS3 name
+                    checked_hex_codes.add(candidate_hex) # Add here to avoid potential re-check errors
+                 except Exception as e: print(f"Warn: Error processing candidate {name}: {e}")
+
+            if closest_name is None: return ("Could not find closest color.",)
+
+            # --- 3) Map the closest internal name found ---
+            final_color_name = closest_name
+            if not use_css_name:
+                mapped_name = human_readable_map.get(closest_name)
+                if mapped_name: final_color_name = mapped_name
+                else: final_color_name = closest_name # Fallback if no mapping
+
+            return (final_color_name,)
+
+# END: Hex to Color Name | Sokes 🦬
+##############################################################
+
 ##############################################################
 # Node Mappings
 
 NODE_CLASS_MAPPINGS = {
-    "Latent Switch x9 | sokes 🦬": latent_input_switch_9x_sokes,
     "Current Date | sokes 🦬": current_date_sokes,
+    "Latent Switch x9 | sokes 🦬": latent_input_switch_9x_sokes,
     "Replace Text with RegEx | sokes 🦬": replace_text_regex_sokes,
     "Load Random Image | sokes 🦬": load_random_image_sokes,
+    "Hex to Color Name | sokes 🦬": hex_to_color_name_sokes,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -286,4 +486,5 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "Latent Switch x9 | sokes 🦬": "Latent Switch x9 🦬",
     "Replace Text with RegEx | sokes 🦬": "Replace Text with RegEx 🦬",
     "Load Random Image | sokes 🦬": "Load Random Image 🦬",
+    "Hex to Color Name | sokes 🦬": "Hex to Color Name 🦬",
 }
