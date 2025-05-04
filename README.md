@@ -22,6 +22,7 @@ To install nodes follow these steps:
 3. Search for ```ComfyUI Sokes Nodes```
 4. Click Install
 
+
 **Manually**
 1. Open a terminal or a command line interface.
 2. Navigate to the ComfyUI/custom_nodes/ directory.
@@ -34,7 +35,7 @@ To install nodes follow these steps:
 
 ### What is ComfyUI?
 
-[ComfyUI](https://github.com/comfyanonymous/ComfyUI) is a node based backend and GUI for Stable Diffusion.
+[ComfyUI](https://github.com/comfyanonymous/ComfyUI) is a node based interface and backend for all things AI related, including image, video, audio, and text generation.
 
 *Recommended ComfyUI extension: [ComfyUI-Manager](https://github.com/ltdrdata/ComfyUI-Manager)*
 
@@ -42,9 +43,10 @@ To install nodes follow these steps:
 
 ### Why a bison 🦬 emoji?
 
-Cause there's no offical musk ox emoji...I'll reached out to the Unicode Consortium.
+There's no offical musk ox emoji...I'll reached out to the Unicode Consortium.
 
 ---
 
 ### Future Node Concepts
-- [ ] SDXL Prompt Styler node with custom categories based on json file(s)
+- [ ] Prompt Styler node with custom categories based on json file(s)
+- [ ] Palette-to-Prompt Builder
