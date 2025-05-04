@@ -16,13 +16,13 @@ A small node suite for ComfyUI featuring the following nodes:
 
 To install nodes follow these steps:
 
-## Via ComfyUI Manager
+**Via ComfyUI Manager**
 1. Open ComfyUI Manager
 2. Open Custom Nodes Manager
 3. Search for ```ComfyUI Sokes Nodes```
 4. Click Install
 
-## Manually
+**Manually**
 1. Open a terminal or a command line interface.
 2. Navigate to the ComfyUI/custom_nodes/ directory.
 3. Run the following command: ```git clone https://github.com/m-sokes/ComfyUI-Sokes-Nodes.git```
