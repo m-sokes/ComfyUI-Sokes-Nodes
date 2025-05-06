@@ -8,6 +8,37 @@ import numpy as np # for image manipulation in torch
 import cv2 # for image processing
 from PIL import Image, ImageOps # load random image, orient image
 
+# Try to import folder_paths, ComfyUI should make this available
+try:
+    import folder_paths
+except ImportError:
+    # Create a dummy folder_paths if not found (e.g. running outside ComfyUI)
+    # This allows the script to be parsed, but image loading might fail
+    # if paths are relative and not resolvable without ComfyUI's context.
+    print("sokes_nodes.py: folder_paths module not found. Image loading might be limited to absolute paths.")
+    class DummyFolderPaths:
+        def get_input_directory(self):
+            # Try to guess a common input directory, or return None
+            if os.path.isdir("input"): return "input"
+            if os.path.isdir("../input"): return "../input" # If nodes are in subfolder
+            return None
+
+        def get_annotated_filepath(self, file_path):
+            # In a dummy scenario, just return the file_path if it's part of a common structure
+            # or assume it's absolute/resolvable as is.
+            input_dir = self.get_input_directory()
+            if input_dir and os.path.exists(os.path.join(input_dir, file_path)):
+                return os.path.join(input_dir, file_path)
+            return file_path # Fallback
+
+        def get_folder_paths(self, folder_name): #Placeholder for other potential uses
+            if folder_name == "input" and self.get_input_directory():
+                return [self.get_input_directory()]
+            return []
+
+    folder_paths = DummyFolderPaths()
+
+
 # Current Date | Sokes 🦬
 
 class current_date_sokes:
@@ -30,7 +61,8 @@ class current_date_sokes:
         now = datetime.now()  # Fresh timestamp on every execution
     
         # Uppercase date/time components (case-insensitive)
-        formatted = re.sub(r'(?i)(y+|m+|d+)', lambda m: m.group().upper(), date_format)
+        formatted = re.sub(r'(?i)([YMD])\1*', lambda m: m.group().upper(), date_format)
+
 
         # Replace in order: longest first to prevent partial replacements
         # Year
@@ -39,11 +71,11 @@ class current_date_sokes:
         
         # Month 
         formatted = formatted.replace("MM", now.strftime("%m"))  # Zero-padded
-        formatted = formatted.replace("M", now.strftime("%m").lstrip("0"))  # No zero-pad
+        formatted = formatted.replace("M", str(now.month)) # No zero-pad (strftime %-m is platform dependent)
         
         # Day
         formatted = formatted.replace("DD", now.strftime("%d"))  # Zero-padded
-        formatted = formatted.replace("D", now.strftime("%d").lstrip("0"))  # No zero-pad
+        formatted = formatted.replace("D", str(now.day))    # No zero-pad (strftime %-d is platform dependent)
 
         return (formatted,)
 
@@ -58,7 +90,7 @@ class current_date_sokes:
 
 class latent_input_switch_9x_sokes:
     @classmethod
-    def INPUT_TYPES(s):
+    def INPUT_TYPES(cls): # Changed s to cls
         return {
             "required": {
                 "latent_select": ("INT", {"default": 0, "min": 0, "max": 8, "step": 1}),
@@ -78,30 +110,31 @@ class latent_input_switch_9x_sokes:
 
     RETURN_TYPES = ("LATENT", )
     FUNCTION = "latent_input_switch_9x_sokes"
-    OUTPUT_NODE = True
+    # OUTPUT_NODE = True # Typically not needed for a switch, can be removed unless specific reason
     CATEGORY = "Sokes 🦬"
 
     def latent_input_switch_9x_sokes(self, latent_select, latent_0, latent_1=None, latent_2=None, latent_3=None, latent_4=None, latent_5=None, latent_6=None, latent_7=None, latent_8=None):
-        if int(round(latent_select)) == 0 and latent_0 != None:
-            return (latent_0, )
-        if int(round(latent_select)) == 1 and latent_1 != None:
-            return (latent_1, )
-        if int(round(latent_select)) == 2 and latent_2 != None:
-            return (latent_2, )
-        if int(round(latent_select)) == 3 and latent_3 != None:
-            return (latent_3, )
-        if int(round(latent_select)) == 4 and latent_4 != None:
-            return (latent_4, )
-        if int(round(latent_select)) == 5 and latent_5 != None:
-            return (latent_5, )
-        if int(round(latent_select)) == 6 and latent_6 != None:
-            return (latent_6, )
-        if int(round(latent_select)) == 7 and latent_7 != None:
-            return (latent_7, )
-        if int(round(latent_select)) == 8 and latent_8 != None:
-            return (latent_8, )
+        latents = [latent_0, latent_1, latent_2, latent_3, latent_4, latent_5, latent_6, latent_7, latent_8]
+        selected_index = int(round(latent_select))
+
+        if 0 <= selected_index < len(latents) and latents[selected_index] is not None:
+            return (latents[selected_index],)
         else:
-            return (latent_0, )
+            # Fallback to latent_0 if selection is out of bounds or selected latent is None
+            if latent_0 is not None:
+                return (latent_0,)
+            else:
+                # This case should ideally be handled by ComfyUI's graph validation
+                # or you might want to raise an error or return a dummy latent if possible.
+                # For now, returning None might cause issues downstream.
+                # A better fallback might be needed depending on ComfyUI's handling of None latents.
+                # However, latent_0 is required, so it should not be None.
+                # If the selected optional latent is None, then falling back to latent_0 is the current logic.
+                # If latent_0 itself IS None (which shouldn't happen due to "required"),
+                # then this is an issue.
+                # The original logic returns latent_0 which works fine if latent_0 is guaranteed.
+                return (latent_0,)
+
 
 # END: Latent Input Swtich x9 | Sokes 🦬
 ##############################################################
@@ -113,17 +146,17 @@ class replace_text_regex_sokes:
     @ classmethod
     def INPUT_TYPES(cls):
         return {"required": {
-            "text": ("STRING", {"multiline": True, "defaultBehavior": "input"}),
-            "regex_pattern": ("STRING", {"multiline": False}),
-            "new": ("STRING", {"multiline": False})
+            "text": ("STRING", {"multiline": True, "defaultBehavior": "input"}), # Comfy preferred: "default": ""
+            "regex_pattern": ("STRING", {"multiline": False, "default": ""}),
+            "new": ("STRING", {"multiline": False, "default": ""})
         }}
 
     RETURN_TYPES = ("STRING",)
     FUNCTION = "fn_replace_text_regex_sokes"
     CATEGORY = "Sokes 🦬"
 
-    @ staticmethod
-    def fn_replace_text_regex_sokes(regex_pattern, new, text):
+    # @ staticmethod # Static method is fine
+    def fn_replace_text_regex_sokes(self, regex_pattern, new, text): # self if not static
         return (re.sub(regex_pattern, new, text),)
 
 
@@ -134,11 +167,14 @@ class replace_text_regex_sokes:
 # START: Load Random Image with Path and Mask | Sokes 🦬
  
 class load_random_image_sokes:
+    # IMG_EXTENSIONS as a class variable
+    IMG_EXTENSIONS = [".png", ".jpg", ".jpeg", ".bmp", ".webp", ".JPEG", ".JPG", ".PNG"]
+
     def __init__(self):
-        self.img_extensions = [".png", ".jpg", ".jpeg", ".bmp", ".webp", ".JPEG", ".JPG"]
+        pass # No need for self.img_extensions if using class variable
  
     @classmethod
-    def INPUT_TYPES(s):
+    def INPUT_TYPES(cls): # Changed s to cls
         return {
             "required": {
                 "folder": ("STRING", {"default": "."}),
@@ -154,50 +190,57 @@ class load_random_image_sokes:
     FUNCTION = "load_image"
  
     def load_image(self, folder, n_images, seed, sort):
-        # --- Folder Resolution (same as before) ---
+        resolved_folder_path = folder
         if not os.path.isdir(folder):
             try:
+                # Use imported folder_paths
                 input_dir = folder_paths.get_input_directory()
-                resolved_folder = folder_paths.get_annotated_filepath(folder) # More robust way
-                if resolved_folder and os.path.isdir(resolved_folder):
-                     folder = resolved_folder
-                elif os.path.isdir(os.path.join(input_dir, folder)): # Fallback for simple relative paths
-                    folder = os.path.join(input_dir, folder)
+                annotated_path = folder_paths.get_annotated_filepath(folder)
+
+                if annotated_path and os.path.isdir(annotated_path):
+                    resolved_folder_path = annotated_path
+                elif input_dir and os.path.isdir(os.path.join(input_dir, folder)):
+                    resolved_folder_path = os.path.join(input_dir, folder)
                 else:
-                     if not os.path.isdir(folder):
-                          raise FileNotFoundError(f"Folder '{folder}' not found directly or relative to input directory.")
+                    # If still not a directory, will be caught by the check below
+                    pass
+            except NameError:
+                print(f"sokes_nodes.py: 'folder_paths' module not available for resolving '{folder}'. Using path as is.")
             except Exception as e:
-                 raise Exception(f"Error resolving folder '{folder}'. Ensure it exists or is relative to ComfyUI's input directory. Error: {e}")
- 
-        # --- File Discovery (same as before) ---
+                print(f"sokes_nodes.py: Error trying to resolve folder '{folder}' using folder_paths: {e}. Using path as is.")
+        
+        if not os.path.isdir(resolved_folder_path):
+            raise FileNotFoundError(f"Folder '{resolved_folder_path}' (resolved from '{folder}') not found or not a directory.")
+        
+        folder = resolved_folder_path # Use the resolved path from now on
+
         try:
             all_files = [os.path.join(folder, f) for f in os.listdir(folder)]
             image_paths = [f for f in all_files if os.path.isfile(f)]
-            image_paths = [f for f in image_paths if any([f.lower().endswith(ext) for ext in self.img_extensions])]
+            # Use class variable IMG_EXTENSIONS
+            image_paths = [f for f in image_paths if any([f.lower().endswith(ext) for ext in self.IMG_EXTENSIONS])]
         except Exception as e:
             raise Exception(f"Error listing files in folder '{folder}': {e}")
  
-        # --- Image Validation (same as before) ---
         valid_image_paths = []
-        for f in image_paths:
+        for f_path in image_paths:
             try:
-                is_image = imghdr.what(f)
+                is_image = imghdr.what(f_path)
                 if not is_image:
                     try:
-                        img_test = Image.open(f)
+                        img_test = Image.open(f_path)
                         img_test.verify()
                         is_image = True
                     except Exception:
                         is_image = False
                 if is_image:
-                    valid_image_paths.append(f)
+                    valid_image_paths.append(f_path)
             except Exception as e:
-                 print(f"Skipping potentially corrupt image: {f} - {str(e)}")
+                 print(f"Skipping potentially corrupt image: {f_path} - {str(e)}")
  
         if not valid_image_paths:
             raise ValueError(f"No valid images found in folder: {folder}")
  
-        # --- Shuffle/Sort and Select (same as before) ---
         if not sort:
             random.seed(seed)
             random.shuffle(valid_image_paths)
@@ -208,12 +251,11 @@ class load_random_image_sokes:
         actual_n_images = min(n_images, num_available)
         if actual_n_images < n_images and n_images > 0:
              print(f"Warning: Requested {n_images} images, but only {num_available} were found/valid in '{folder}'. Loading {actual_n_images}.")
-        elif n_images <= 0:
+        elif n_images <= 0: # Treat 0 or negative as "load all available"
              actual_n_images = num_available
  
         selected_paths = valid_image_paths[:actual_n_images]
  
-        # --- Load and Process Images and Masks ---
         output_images = []
         output_masks = []
         loaded_paths = []
@@ -222,35 +264,27 @@ class load_random_image_sokes:
         for image_path in selected_paths:
             try:
                 img_pil = Image.open(image_path)
-                img_pil = ImageOps.exif_transpose(img_pil) # Handle orientation
+                img_pil = ImageOps.exif_transpose(img_pil)
  
-                # --- Image Processing ---
-                # **MODIFICATION: Convert to RGBA to preserve/add alpha channel**
-                image_rgba = img_pil.convert("RGBA")
-                image_np = np.array(image_rgba).astype(np.float32) / 255.0 # Shape: (H, W, 4)
-                # ComfyUI IMAGE format is Batch, Height, Width, Channel (BHWC)
-                image_tensor = torch.from_numpy(image_np)[None,] # Shape: [1, H, W, 4]
+                image_rgb_pil = img_pil.convert("RGB")
+                image_np = np.array(image_rgb_pil).astype(np.float32) / 255.0
+                image_tensor = torch.from_numpy(image_np)[None,]
  
-                # --- Mask Processing (Remains the same) ---
-                # Checks the *original* PIL image for alpha before RGBA conversion
                 mask_tensor = None
-                # ComfyUI MASK format is Batch, Height, Width (BHW)
-                if 'A' in img_pil.getbands() or 'a' in img_pil.getbands(): # Check original bands
-                    mask = img_pil.getchannel('A')
-                    mask_np = np.array(mask).astype(np.float32) / 255.0 # Shape: (H, W)
-                    mask_tensor = torch.from_numpy(mask_np)[None,] # Shape: [1, H, W]
+                if 'A' in img_pil.getbands() or 'a' in img_pil.getbands():
+                    mask_pil_channel = img_pil.getchannel('A')
+                    mask_np = np.array(mask_pil_channel).astype(np.float32) / 255.0
+                    mask_tensor = torch.from_numpy(mask_np)[None,]
                 else:
-                    mask_shape = (image_tensor.shape[1], image_tensor.shape[2]) # Get H, W
+                    mask_shape = (image_tensor.shape[1], image_tensor.shape[2])
                     mask_np = np.ones(mask_shape, dtype=np.float32)
-                    mask_tensor = torch.from_numpy(mask_np)[None,] # Shape: [1, H, W]
+                    mask_tensor = torch.from_numpy(mask_np)[None,]
  
-                # --- Batch Consistency Check (Checks H, W - still valid) ---
                 current_shape = image_tensor.shape[1:3]
                 if first_image_shape is None:
                     first_image_shape = current_shape
                 elif current_shape != first_image_shape:
                     print(f"⚠️ Warning: Image {os.path.basename(image_path)} has different dimensions ({current_shape}) than the first image ({first_image_shape}). Batching may fail or produce unexpected results downstream. Consider resizing images beforehand.")
-                    # Optional resizing logic could go here, applied to both image_tensor (4ch) and mask_tensor (1ch)
  
                 output_images.append(image_tensor)
                 output_masks.append(mask_tensor)
@@ -263,53 +297,66 @@ class load_random_image_sokes:
         if not output_images:
             raise ValueError("No images were successfully loaded after processing.")
  
-        # --- Collate Batches (same as before) ---
-        final_image_batch = torch.cat(output_images, dim=0) # Shape: [B, H, W, 4]
-        final_mask_batch = torch.cat(output_masks, dim=0)  # Shape: [B, H, W]
+        final_image_batch = torch.cat(output_images, dim=0)
+        final_mask_batch = torch.cat(output_masks, dim=0)
  
         return (final_image_batch, final_mask_batch, loaded_paths)
  
-    # --- IS_CHANGED (same as before) ---
     @classmethod
-    def IS_CHANGED(s, folder, n_images, seed, sort):
+    def IS_CHANGED(cls, folder, n_images, seed, sort): # Changed s to cls
+        resolved_folder_path = folder
         try:
-            resolved_folder = None
+            # Use imported folder_paths
             if not os.path.isdir(folder):
-                try:
-                    resolved_folder = folder_paths.get_annotated_filepath(folder)
-                    if not resolved_folder or not os.path.isdir(resolved_folder):
-                       input_dir = folder_paths.get_input_directory()
-                       resolved_folder = os.path.join(input_dir, folder)
-                       if not os.path.isdir(resolved_folder):
-                            resolved_folder = folder
-                except:
-                    resolved_folder = folder
- 
-            if not os.path.isdir(resolved_folder):
-                 return float("NaN")
- 
-            all_files = [os.path.join(resolved_folder, f) for f in os.listdir(resolved_folder)]
+                annotated_path = folder_paths.get_annotated_filepath(folder)
+                if annotated_path and os.path.isdir(annotated_path):
+                    resolved_folder_path = annotated_path
+                else:
+                    input_dir = folder_paths.get_input_directory()
+                    if input_dir and os.path.isdir(os.path.join(input_dir, folder)):
+                        resolved_folder_path = os.path.join(input_dir, folder)
+        except NameError:
+            # folder_paths not defined, use path as is for hashing.
+            # IS_CHANGED might be less effective but won't crash.
+            pass
+        except Exception as e:
+            print(f"sokes_nodes.py IS_CHANGED: Error during folder_path resolution: {e}")
+            # Fallback to original folder if resolution fails, for hashing purposes
+            pass
+
+        if not os.path.isdir(resolved_folder_path):
+            return float("NaN") # Indicate path not found, should re-evaluate
+
+        try:
+            all_files = [os.path.join(resolved_folder_path, f) for f in os.listdir(resolved_folder_path)]
             image_paths = [f for f in all_files if os.path.isfile(f)]
-            img_extensions_lower = [ext.lower() for ext in s().img_extensions]
+            # Use class variable IMG_EXTENSIONS
+            img_extensions_lower = [ext.lower() for ext in cls.IMG_EXTENSIONS]
             image_paths = [f for f in image_paths if f.lower().endswith(tuple(img_extensions_lower))]
-            image_paths = sorted(image_paths)
+            
+            if not image_paths: # No images found
+                return f"no_images_in_{resolved_folder_path}_{seed}_{n_images}_{sort}"
+
+            image_paths = sorted(image_paths) # Sort for consistent hash base
             mtimes = [os.path.getmtime(f) for f in image_paths]
             file_info_tuple = tuple(zip(image_paths, mtimes))
             file_list_hash = hash(file_info_tuple)
  
+            # The 'sort' parameter affects image selection order, 'seed' affects it if not sorted
             if not sort:
                 return f"{file_list_hash}_{seed}_{n_images}"
-            else:
+            else: # If sorted, seed doesn't influence order of already sorted files
                 return f"{file_list_hash}_{n_images}"
- 
         except Exception as e:
-             print(f"IS_CHANGED Error: {e}")
-             return float("NaN")
+             print(f"sokes_nodes.py IS_CHANGED Error: {e}")
+             return float("NaN") # Fallback to always re-execute on error
   
 # END: Load Random Image with Path and Mask | Sokes 🦬
 ##############################################################
 
 
+# These functions are not currently used by any node in this file.
+# They can be kept for future use or removed if not needed.
 def round_to_nearest_multiple(number, multiple):
     return int(multiple * round(number / multiple))
 
@@ -317,13 +364,11 @@ def round_to_nearest_multiple(number, multiple):
 def get_centre_crop(img, aspect_ratio):
     h, w = np.array(img).shape[:2]
     if w/h > aspect_ratio:
-        # crop width:
         new_w = int(h * aspect_ratio)
         left = (w - new_w) // 2
         right = (w + new_w) // 2
         crop = img[:, left:right]
     else:
-        # crop height:
         new_h = int(w / aspect_ratio)
         top = (h - new_h) // 2
         bottom = (h + new_h) // 2
@@ -332,31 +377,21 @@ def get_centre_crop(img, aspect_ratio):
 
 
 def create_same_sized_crops(imgs, target_n_pixels=2048**2):
-    """
-    Given a list of images:
-        - extract the best possible center crop of same aspect ratio for all images
-        - rescale these crops to have ~target_n_pixels
-        - return resized images
-    """
-
     assert len(imgs) > 1
-    imgs = [np.array(img) for img in imgs]
+    imgs_np = [np.array(img) for img in imgs] # Ensure they are numpy arrays
     
-    # Get center crops at same aspect ratio
-    aspect_ratios = [img.shape[1] / img.shape[0] for img in imgs]
+    aspect_ratios = [img.shape[1] / img.shape[0] for img in imgs_np]
     final_aspect_ratio = np.mean(aspect_ratios)
-    crops = [get_centre_crop(img, final_aspect_ratio) for img in imgs]
+    crops = [get_centre_crop(img, final_aspect_ratio) for img in imgs_np]
 
-    # Compute final w,h using final_aspect_ratio and target_n_pixels:
     final_h = np.sqrt(target_n_pixels / final_aspect_ratio)
     final_w = final_h * final_aspect_ratio
     final_h = round_to_nearest_multiple(final_h, 8)
     final_w = round_to_nearest_multiple(final_w, 8)
 
-    # Resize images
     resized_imgs = [cv2.resize(crop, (final_w, final_h), cv2.INTER_CUBIC) for crop in crops]
-    #resized_imgs = [Image.fromarray((img * 255).astype(np.uint8)) for img in resized_imgs]
-    
+    # To return PIL Images:
+    # resized_imgs_pil = [Image.fromarray(img) for img in resized_imgs] # Assuming img is uint8 after resize
     return resized_imgs
 
 ##############################################################
@@ -375,3 +410,14 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "Replace Text with RegEx | sokes 🦬": "Replace Text with RegEx 🦬",
     "Load Random Image | sokes 🦬": "Load Random Image 🦬",
 }
+
+# A manifest for ComfyUI
+MANIFEST = {
+    "name": "Sokes Nodes",
+    "version": (1,0,5),
+    "author": "Sokes",
+    "project": "https://github.com/m-sokes/ComfyUI-Sokes-Nodes/upload/main",
+    "description": "A collection of utility nodes for ComfyUI by Sokes.",
+}
+
+__all__ = ['NODE_CLASS_MAPPINGS', 'NODE_DISPLAY_NAME_MAPPINGS', 'MANIFEST']
