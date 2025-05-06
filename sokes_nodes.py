@@ -8,21 +8,7 @@ import numpy as np # for image manipulation in torch
 import cv2 # for image processing
 from PIL import Image, ImageOps # load random image, orient image
 
-# Might need to: pip install webcolors colormath
-import webcolors
-from colormath.color_objects import sRGBColor, LabColor
-from colormath.color_conversions import convert_color
-from colormath.color_diff import delta_e_cie1976, delta_e_cie2000
-
-from .sokes_color_maps import css3_names_to_hex, css3_hex_to_names, human_readable_map, explicit_targets_for_comparison
-
-import numpy as np
-if not hasattr(np, "asscalar"):
-        np.asscalar = lambda a: a.item()        
-
-
-##############################################################
-# START Current Date | Sokes 🦬
+# Current Date | Sokes 🦬
 
 class current_date_sokes:
     def __init__(self):
@@ -66,12 +52,9 @@ class current_date_sokes:
         # Force re-execution
         return (datetime.now().timestamp(),)
 
-# END Current Date | Sokes 🦬
-##############################################################
-
 
 ##############################################################
-# START Latent Input Swtich x9 | Sokes 🦬
+# START: Latent Input Swtich x9 | Sokes 🦬
 
 class latent_input_switch_9x_sokes:
     @classmethod
@@ -120,11 +103,11 @@ class latent_input_switch_9x_sokes:
         else:
             return (latent_0, )
 
-# END Latent Input Swtich x9 | Sokes 🦬
+# END: Latent Input Swtich x9 | Sokes 🦬
 ##############################################################
 
 ##############################################################
-# START Replace Text with Regex | Sokes 🦬
+# START: Replace Text with Regex | Sokes 🦬
 
 class replace_text_regex_sokes:
     @ classmethod
@@ -144,16 +127,16 @@ class replace_text_regex_sokes:
         return (re.sub(regex_pattern, new, text),)
 
 
-# END Replace Text with Regex | Sokes 🦬
+# END: Replace Text with Regex | Sokes 🦬
 ##############################################################
 
 ##############################################################
-# START Load Random Image | Sokes 🦬
-
+# START: Load Random Image with Path and Mask | Sokes 🦬
+ 
 class load_random_image_sokes:
     def __init__(self):
         self.img_extensions = [".png", ".jpg", ".jpeg", ".bmp", ".webp", ".JPEG", ".JPG"]
-
+ 
     @classmethod
     def INPUT_TYPES(s):
         return {
@@ -164,12 +147,12 @@ class load_random_image_sokes:
                 "sort": ("BOOLEAN", {"default": False}),
             }
         }
-
+ 
     CATEGORY = "Sokes 🦬/Loaders"
     RETURN_TYPES = ("IMAGE", "MASK", "LIST")
     RETURN_NAMES = ("image", "mask", "image_path")
     FUNCTION = "load_image"
-
+ 
     def load_image(self, folder, n_images, seed, sort):
         # --- Folder Resolution (same as before) ---
         if not os.path.isdir(folder):
@@ -185,7 +168,7 @@ class load_random_image_sokes:
                           raise FileNotFoundError(f"Folder '{folder}' not found directly or relative to input directory.")
             except Exception as e:
                  raise Exception(f"Error resolving folder '{folder}'. Ensure it exists or is relative to ComfyUI's input directory. Error: {e}")
-
+ 
         # --- File Discovery (same as before) ---
         try:
             all_files = [os.path.join(folder, f) for f in os.listdir(folder)]
@@ -193,7 +176,7 @@ class load_random_image_sokes:
             image_paths = [f for f in image_paths if any([f.lower().endswith(ext) for ext in self.img_extensions])]
         except Exception as e:
             raise Exception(f"Error listing files in folder '{folder}': {e}")
-
+ 
         # --- Image Validation (same as before) ---
         valid_image_paths = []
         for f in image_paths:
@@ -210,44 +193,44 @@ class load_random_image_sokes:
                     valid_image_paths.append(f)
             except Exception as e:
                  print(f"Skipping potentially corrupt image: {f} - {str(e)}")
-
+ 
         if not valid_image_paths:
             raise ValueError(f"No valid images found in folder: {folder}")
-
+ 
         # --- Shuffle/Sort and Select (same as before) ---
         if not sort:
             random.seed(seed)
             random.shuffle(valid_image_paths)
         else:
              valid_image_paths = sorted(valid_image_paths)
-
+ 
         num_available = len(valid_image_paths)
         actual_n_images = min(n_images, num_available)
         if actual_n_images < n_images and n_images > 0:
              print(f"Warning: Requested {n_images} images, but only {num_available} were found/valid in '{folder}'. Loading {actual_n_images}.")
         elif n_images <= 0:
              actual_n_images = num_available
-
+ 
         selected_paths = valid_image_paths[:actual_n_images]
-
+ 
         # --- Load and Process Images and Masks ---
         output_images = []
         output_masks = []
         loaded_paths = []
         first_image_shape = None
-
+ 
         for image_path in selected_paths:
             try:
                 img_pil = Image.open(image_path)
                 img_pil = ImageOps.exif_transpose(img_pil) # Handle orientation
-
+ 
                 # --- Image Processing ---
                 # **MODIFICATION: Convert to RGBA to preserve/add alpha channel**
                 image_rgba = img_pil.convert("RGBA")
                 image_np = np.array(image_rgba).astype(np.float32) / 255.0 # Shape: (H, W, 4)
                 # ComfyUI IMAGE format is Batch, Height, Width, Channel (BHWC)
                 image_tensor = torch.from_numpy(image_np)[None,] # Shape: [1, H, W, 4]
-
+ 
                 # --- Mask Processing (Remains the same) ---
                 # Checks the *original* PIL image for alpha before RGBA conversion
                 mask_tensor = None
@@ -260,7 +243,7 @@ class load_random_image_sokes:
                     mask_shape = (image_tensor.shape[1], image_tensor.shape[2]) # Get H, W
                     mask_np = np.ones(mask_shape, dtype=np.float32)
                     mask_tensor = torch.from_numpy(mask_np)[None,] # Shape: [1, H, W]
-
+ 
                 # --- Batch Consistency Check (Checks H, W - still valid) ---
                 current_shape = image_tensor.shape[1:3]
                 if first_image_shape is None:
@@ -268,24 +251,24 @@ class load_random_image_sokes:
                 elif current_shape != first_image_shape:
                     print(f"⚠️ Warning: Image {os.path.basename(image_path)} has different dimensions ({current_shape}) than the first image ({first_image_shape}). Batching may fail or produce unexpected results downstream. Consider resizing images beforehand.")
                     # Optional resizing logic could go here, applied to both image_tensor (4ch) and mask_tensor (1ch)
-
+ 
                 output_images.append(image_tensor)
                 output_masks.append(mask_tensor)
                 loaded_paths.append(image_path)
-
+ 
             except Exception as e:
                 print(f"❌ Error loading or processing image {image_path}: {str(e)}. Skipping.")
                 continue
-
+ 
         if not output_images:
             raise ValueError("No images were successfully loaded after processing.")
-
+ 
         # --- Collate Batches (same as before) ---
         final_image_batch = torch.cat(output_images, dim=0) # Shape: [B, H, W, 4]
         final_mask_batch = torch.cat(output_masks, dim=0)  # Shape: [B, H, W]
-
+ 
         return (final_image_batch, final_mask_batch, loaded_paths)
-
+ 
     # --- IS_CHANGED (same as before) ---
     @classmethod
     def IS_CHANGED(s, folder, n_images, seed, sort):
@@ -301,10 +284,10 @@ class load_random_image_sokes:
                             resolved_folder = folder
                 except:
                     resolved_folder = folder
-
+ 
             if not os.path.isdir(resolved_folder):
                  return float("NaN")
-
+ 
             all_files = [os.path.join(resolved_folder, f) for f in os.listdir(resolved_folder)]
             image_paths = [f for f in all_files if os.path.isfile(f)]
             img_extensions_lower = [ext.lower() for ext in s().img_extensions]
@@ -313,15 +296,19 @@ class load_random_image_sokes:
             mtimes = [os.path.getmtime(f) for f in image_paths]
             file_info_tuple = tuple(zip(image_paths, mtimes))
             file_list_hash = hash(file_info_tuple)
-
+ 
             if not sort:
                 return f"{file_list_hash}_{seed}_{n_images}"
             else:
                 return f"{file_list_hash}_{n_images}"
-
+ 
         except Exception as e:
              print(f"IS_CHANGED Error: {e}")
              return float("NaN")
+  
+# END: Load Random Image with Path and Mask | Sokes 🦬
+##############################################################
+
 
 def round_to_nearest_multiple(number, multiple):
     return int(multiple * round(number / multiple))
@@ -372,113 +359,14 @@ def create_same_sized_crops(imgs, target_n_pixels=2048**2):
     
     return resized_imgs
 
-# END Load Random Image | Sokes 🦬
-##############################################################
-
-##############################################################
-# START Hex to Color Name | Sokes 🦬
-
-class hex_to_color_name_sokes:
-    CATEGORY = "Sokes 🦬"
-    RETURN_TYPES = ("STRING",)
-    RETURN_NAMES = ("color_name",)
-    FUNCTION = "hex_to_color_name_fn"
-
-    @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "hex_color": (
-                    "STRING",
-                    {"default": "#FFFFFF", "multiline": False},
-                )
-            },
-            "optional": {
-                "use_css_name": ("BOOLEAN", {"default": False})
-            }
-        }
-
-    def hex_to_color_name_fn(self, hex_color, use_css_name=False):
-        # ... Input Sanitization ... (no changes needed here) ...
-        if not hex_color: return ("Input hex color is empty.",)
-        hex_color = hex_color.strip()
-        if not hex_color.startswith("#"): hex_color = "#" + hex_color
-        if len(hex_color) == 4: hex_color = f"#{hex_color[1]*2}{hex_color[2]*2}{hex_color[3]*2}"
-        if len(hex_color) != 7: return (f"Invalid hex format: {hex_color}",)
-
-
-        # --- 1) Exact CSS3 Match ---
-        try:
-            standard_name = webcolors.hex_to_name(hex_color, spec="css3")
-            final_color_name = standard_name
-            if not use_css_name:
-                 final_color_name = human_readable_map.get(standard_name, standard_name)
-                 if final_color_name is None: final_color_name = standard_name
-            return (final_color_name,)
-        except ValueError:
-            # --- 2) Fallback: Find Nearest Color ---
-            try:
-                requested_rgb = webcolors.hex_to_rgb(hex_color)
-                requested_lab = convert_color(sRGBColor(*requested_rgb, is_upscaled=True), LabColor)
-            except Exception as e: return (f"Invalid input hex/conversion error: {e}",)
-
-            min_dist = float('inf')
-            closest_name = None
-            checked_hex_codes = set()
-
-            # --- Check EXPLICIT TARGETS first ---
-            for target_name, target_hex in explicit_targets_for_comparison.items():
-                 if len(target_hex) == 4: target_hex = f"#{target_hex[1]*2}{target_hex[2]*2}{target_hex[3]*2}"
-                 if target_hex in checked_hex_codes: continue
-                 try:
-                     target_rgb = webcolors.hex_to_rgb(target_hex)
-                     target_lab = convert_color(sRGBColor(*target_rgb, is_upscaled=True), LabColor)
-                     d = delta_e_cie2000(requested_lab, target_lab)
-                     if d < min_dist:
-                         min_dist = d
-                         closest_name = target_name
-                     checked_hex_codes.add(target_hex)
-                 except Exception as e: print(f"Warn: Cannot process explicit target {target_name}: {e}")
-
-
-            # --- Iterate through STANDARD CSS3 colors ---
-            # <<< Use the imported css3_names_to_hex dictionary here >>>
-            for name, candidate_hex in css3_names_to_hex.items():
-                 if len(candidate_hex) == 4: candidate_hex = f"#{candidate_hex[1]*2}{candidate_hex[2]*2}{candidate_hex[3]*2}"
-                 if candidate_hex in checked_hex_codes: continue # Skip if already checked
-                 try:
-                    cand_rgb = webcolors.hex_to_rgb(candidate_hex)
-                    cand_lab = convert_color(sRGBColor(*cand_rgb, is_upscaled=True), LabColor)
-                    d = delta_e_cie2000(requested_lab, cand_lab)
-                    if d < min_dist:
-                        min_dist = d
-                        closest_name = name # Update to the standard CSS3 name
-                    checked_hex_codes.add(candidate_hex) # Add here to avoid potential re-check errors
-                 except Exception as e: print(f"Warn: Error processing candidate {name}: {e}")
-
-            if closest_name is None: return ("Could not find closest color.",)
-
-            # --- 3) Map the closest internal name found ---
-            final_color_name = closest_name
-            if not use_css_name:
-                mapped_name = human_readable_map.get(closest_name)
-                if mapped_name: final_color_name = mapped_name
-                else: final_color_name = closest_name # Fallback if no mapping
-
-            return (final_color_name,)
-
-# END: Hex to Color Name | Sokes 🦬
-##############################################################
-
 ##############################################################
 # Node Mappings
 
 NODE_CLASS_MAPPINGS = {
-    "Current Date | sokes 🦬": current_date_sokes,
     "Latent Switch x9 | sokes 🦬": latent_input_switch_9x_sokes,
+    "Current Date | sokes 🦬": current_date_sokes,
     "Replace Text with RegEx | sokes 🦬": replace_text_regex_sokes,
     "Load Random Image | sokes 🦬": load_random_image_sokes,
-    "Hex to Color Name | sokes 🦬": hex_to_color_name_sokes,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -486,5 +374,4 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "Latent Switch x9 | sokes 🦬": "Latent Switch x9 🦬",
     "Replace Text with RegEx | sokes 🦬": "Replace Text with RegEx 🦬",
     "Load Random Image | sokes 🦬": "Load Random Image 🦬",
-    "Hex to Color Name | sokes 🦬": "Hex to Color Name 🦬",
 }
