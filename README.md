@@ -7,7 +7,7 @@ A small node suite for ComfyUI featuring the following nodes:
 | **Current Date with Custom Formatting** | Useful for file saving organization. E.g. YYYY-MM-DD |
 | **Empty Latent Selector (9 Inputs)** | Useful for exporting a random latent dimentions based on a fixed set |
 | **Replace Text with RegEx** | Useful for using RegEx for text replacement |
-| **Random Image with Path** | Useful for grabbing a random image and referencing the path later in the flow |
+| **Load Random Image** | Useful for grabbing a random image (and mask) and for referencing the path later in the flow |
 | **Hex to Color Name** | Useful for converting Hex to descriptive color names for image-generation prompts |
 
 ---
