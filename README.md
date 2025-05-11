@@ -4,11 +4,11 @@ A small node suite for ComfyUI featuring the following nodes:
 
 | Node | Description |
 | --- | --- |
-| **Current Date with Custom Formatting** | Useful for file saving organization. E.g. YYYY-MM-DD |
-| **Empty Latent Selector (9 Inputs)** | Useful for exporting a random latent dimentions based on a fixed set |
+| **Current Date with Custom Formatting** | Add the current date to the filename. E.g. YYYY-MM-DD |
+| **Empty Latent Selector (9 Inputs)** | Useful for generating a random latent dimentions based on a fixed set |
 | **Replace Text with RegEx** | Useful for using RegEx for text replacement |
-| **Load Random Image** | Useful for grabbing a random image (and mask) and for referencing the path later in the flow |
-| **Hex to Color Name** | Useful for converting Hex to descriptive color names for image-generation prompts |
+| **Load Random Image** | Load a random image and optional mask/alpha, you can also reference the image path |
+| **Hex to Color Name** | Convert hex to descriptive color names for image-generation prompts |
 | **Random Number** | A user friendly random number generator that supports int, float, and bool |
 
 ---
