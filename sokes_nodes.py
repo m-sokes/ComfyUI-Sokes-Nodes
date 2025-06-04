@@ -453,7 +453,7 @@ class load_random_image_sokes:
                 except Exception as e:
                     print(f"sokes_nodes.py: Warning: Could not pre-check image {os.path.basename(image_path_check)} for alpha: {e}. Assuming no alpha for this image in pre-check.")
         
-        print(f"sokes_nodes.py: Final image processing mode for batch: {final_image_mode}")
+        # print(f"sokes_nodes.py: Final image processing mode for batch: {final_image_mode}")
 
         for image_path in selected_paths:
              try:
