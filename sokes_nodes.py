@@ -1,6 +1,7 @@
+import sys # For sys.path debugging if needed in the future
+import os
 from datetime import datetime # datetime
 import re # regex
-import os # for load random image
 import random # for load random image
 import hashlib # for random number
 import imghdr # to check image by header vs extension
@@ -8,9 +9,7 @@ import torch # to resize images
 import numpy as np # for image manipulation in torch
 import cv2 # for image processing
 from PIL import Image, ImageOps # load random image, orient image
-# import imghdr # load random image # Already imported above
 
-# Might need to: pip install webcolors colormath
 import webcolors
 from colormath.color_objects import sRGBColor, LabColor
 from colormath.color_conversions import convert_color
@@ -18,9 +17,77 @@ from colormath.color_diff import delta_e_cie1976, delta_e_cie2000
 
 from .sokes_color_maps import css3_names_to_hex, css3_hex_to_names, human_readable_map, explicit_targets_for_comparison
 
-# import numpy as np # Already imported above
 if not hasattr(np, "asscalar"):
-        np.asscalar = lambda a: a.item()        
+        np.asscalar = lambda a: a.item()
+
+# --- ComfyUI Integration Imports & Preview Logic ---
+# Try importing folder_paths first as it's used by the node's __init__
+try:
+    import folder_paths
+    # print("sokes_nodes.py: Successfully imported 'folder_paths'.")
+except ImportError:
+    # print("sokes_nodes.py: 'folder_paths' module not found. Path resolution might be limited.")
+    folder_paths = None # Set to None if not available
+
+preview_available = False # Assume previews are NOT available by default
+PromptServer = None
+# FONT_PATH is not strictly needed by this node for previews, but we check for comfy.utils
+nodes_module = None # Renamed to avoid conflict with class name 'nodes' if any
+comfy_utils_available = False
+
+#print("sokes_nodes.py: Attempting to import ComfyUI specific modules for previews...")
+try:
+    from server import PromptServer
+    #print("sokes_nodes.py:  - Successfully imported 'PromptServer' from 'server'.")
+except ImportError as e:
+    print(f"sokes_nodes.py:  - FAILED to import 'PromptServer' from 'server'. Error: {e}")
+except Exception as e:
+    print(f"sokes_nodes.py:  - FAILED to import 'PromptServer' from 'server' with OTHER error: {e}")
+
+try:
+    import comfy.utils
+    comfy_utils_available = True
+    #print("sokes_nodes.py:  - Successfully imported 'comfy.utils' module.")
+    #try:
+    #    from comfy.utils import FONT_PATH # This specific import might fail, but it's not critical
+        #print("sokes_nodes.py:    - Successfully imported 'FONT_PATH' from 'comfy.utils'.")
+    #except ImportError:
+    #    print("sokes_nodes.py:    - Note: 'FONT_PATH' not found in 'comfy.utils' (this is okay for previews).")
+except ImportError as e:
+    print(f"sokes_nodes.py:  - FAILED to import 'comfy.utils' module. Error: {e}")
+except Exception as e:
+    print(f"sokes_nodes.py:  - FAILED to import 'comfy.utils' module with OTHER error: {e}")
+
+try:
+    import nodes # This is ComfyUI's 'nodes.py'
+    nodes_module = nodes
+    #print("sokes_nodes.py:  - Successfully imported ComfyUI 'nodes' module.")
+except ImportError as e:
+    print(f"sokes_nodes.py:  - FAILED to import ComfyUI 'nodes' module. Error: {e}")
+except Exception as e:
+    print(f"sokes_nodes.py:  - FAILED to import ComfyUI 'nodes' module with OTHER error: {e}")
+
+if PromptServer and comfy_utils_available and nodes_module:
+    try:
+        PromptServer.instance # Crucial check: is the server actually running and instance available?
+        preview_available = True
+        #print("sokes_nodes.py: Preview system checks passed. Previews should be available.")
+    except AttributeError:
+        #print("sokes_nodes.py: 'PromptServer.instance' not found (AttributeError). Previews will be disabled.")
+        preview_available = False
+    except Exception as e:
+        #print(f"sokes_nodes.py: 'PromptServer.instance' check failed ({type(e).__name__}: {e}). Previews will be disabled.")
+        preview_available = False
+else:
+    missing_components_msg = []
+    if not PromptServer: missing_components_msg.append("'PromptServer'")
+    if not comfy_utils_available: missing_components_msg.append("'comfy.utils' module")
+    if not nodes_module: missing_components_msg.append("ComfyUI 'nodes' module")
+    if missing_components_msg:
+        print(f"sokes_nodes.py: One or more ComfyUI components for previews failed to import ({', '.join(missing_components_msg)}). Previews disabled.")
+    # If components imported but PromptServer.instance failed, that message was already printed.
+
+# --- End ComfyUI Integration Imports & Preview Logic ---
 
 
 ##############################################################
@@ -41,10 +108,10 @@ class current_date_sokes:
     RETURN_NAMES = ("formatted_date",)
     FUNCTION = "current_date_sokes"
     CATEGORY = "Sokes 🦬"
-    
+
     def current_date_sokes(self, date_format):
         now = datetime.now()  # Fresh timestamp on every execution
-    
+
         # Uppercase date/time components (case-insensitive)
         formatted = re.sub(r'(?i)(y+|m+|d+)', lambda m: m.group().upper(), date_format)
 
@@ -52,11 +119,11 @@ class current_date_sokes:
         # Year
         formatted = formatted.replace("YYYY", now.strftime("%Y"))
         formatted = formatted.replace("YY", now.strftime("%y"))
-        
-        # Month 
+
+        # Month
         formatted = formatted.replace("MM", now.strftime("%m"))  # Zero-padded
         formatted = formatted.replace("M", now.strftime("%m").lstrip("0"))  # No zero-pad
-        
+
         # Day
         formatted = formatted.replace("DD", now.strftime("%d"))  # Zero-padded
         formatted = formatted.replace("D", now.strftime("%d").lstrip("0"))  # No zero-pad
@@ -97,30 +164,32 @@ class latent_input_switch_9x_sokes:
 
     RETURN_TYPES = ("LATENT", )
     FUNCTION = "latent_input_switch_9x_sokes"
-    OUTPUT_NODE = True
+    OUTPUT_NODE = True # This was True, assuming it's an output node, kept it.
+                       # If it's just a switch, it might not need to be an OUTPUT_NODE.
     CATEGORY = "Sokes 🦬"
 
     def latent_input_switch_9x_sokes(self, latent_select, latent_0, latent_1=None, latent_2=None, latent_3=None, latent_4=None, latent_5=None, latent_6=None, latent_7=None, latent_8=None):
-        if int(round(latent_select)) == 0 and latent_0 != None:
-            return (latent_0, )
-        if int(round(latent_select)) == 1 and latent_1 != None:
-            return (latent_1, )
-        if int(round(latent_select)) == 2 and latent_2 != None:
-            return (latent_2, )
-        if int(round(latent_select)) == 3 and latent_3 != None:
-            return (latent_3, )
-        if int(round(latent_select)) == 4 and latent_4 != None:
-            return (latent_4, )
-        if int(round(latent_select)) == 5 and latent_5 != None:
-            return (latent_5, )
-        if int(round(latent_select)) == 6 and latent_6 != None:
-            return (latent_6, )
-        if int(round(latent_select)) == 7 and latent_7 != None:
-            return (latent_7, )
-        if int(round(latent_select)) == 8 and latent_8 != None:
-            return (latent_8, )
+        selected_latent = None
+        latent_map = {
+            0: latent_0, 1: latent_1, 2: latent_2, 3: latent_3, 4: latent_4,
+            5: latent_5, 6: latent_6, 7: latent_7, 8: latent_8
+        }
+        
+        select_idx = int(round(latent_select))
+        
+        if select_idx in latent_map and latent_map[select_idx] is not None:
+            selected_latent = latent_map[select_idx]
         else:
-            return (latent_0, )
+            # Fallback to latent_0 if selection is invalid or selected latent is None
+            # (and latent_0 itself is not None, though it's required)
+            selected_latent = latent_0
+            if select_idx not in latent_map:
+                 print(f"latent_input_switch_9x_sokes: Invalid latent_select index {select_idx}. Defaulting to latent_0.")
+            elif latent_map[select_idx] is None and select_idx != 0 : # only print if not trying to select a None optional input
+                 print(f"latent_input_switch_9x_sokes: latent_{select_idx} is None. Defaulting to latent_0.")
+
+
+        return (selected_latent,)
 
 # END Latent Input Swtich x9 | Sokes 🦬
 ##############################################################
@@ -141,8 +210,8 @@ class replace_text_regex_sokes:
     FUNCTION = "fn_replace_text_regex_sokes"
     CATEGORY = "Sokes 🦬"
 
-    @ staticmethod
-    def fn_replace_text_regex_sokes(regex_pattern, new, text):
+    #@ staticmethod # Original code had this, but it's not strictly necessary for ComfyUI nodes
+    def fn_replace_text_regex_sokes(self, regex_pattern, new, text): # Added self
         return (re.sub(regex_pattern, new, text),)
 
 
@@ -152,39 +221,26 @@ class replace_text_regex_sokes:
 ##############################################################
 # START Load Random Image with Path and Mask | Sokes 🦬
 
-# Try importing folder_paths and preview_images if available (for ComfyUI integration)
-try:
-    import folder_paths
-except ImportError:
-    print("sokes_nodes.py: 'folder_paths' module not found. Path resolution might be limited.")
-    folder_paths = None # Set to None if not available
-
-try:
-    # Import the preview handling module from ComfyUI utilities
-    from server import PromptServer
-    from comfy.utils import FONT_PATH # To check if we are in ComfyUI
-    import nodes # To get the preview_widget decorator potentially
-    preview_available = True
-    # Basic check if we're likely running within ComfyUI server context
-    try:
-        PromptServer.instance
-    except:
-        preview_available = False
-        print("sokes_nodes.py: PromptServer instance not found. Output preview disabled.")
-
-except ImportError:
-    preview_available = False
-    print("sokes_nodes.py: Could not import 'server' or 'comfy.utils'. Output preview disabled.")
-
 class load_random_image_sokes:
     IMG_EXTENSIONS = [".png", ".jpg", ".jpeg", ".bmp", ".webp", ".JPEG", ".JPG", ".PNG"]
 
     def __init__(self):
-        self.output_dir = folder_paths.get_temp_directory() if folder_paths else "temp_sokes"
-        self.type = "temp"
-        if not os.path.exists(self.output_dir) and self.type == "temp":
-             try: os.makedirs(self.output_dir)
-             except: print(f"Warning: Could not create temp directory {self.output_dir}")
+        # Use the globally imported folder_paths if available
+        self.output_dir = folder_paths.get_temp_directory() if folder_paths else "temp_sokes_previews"
+        self.type = "temp" # ComfyUI expects "temp" for previews saved in temp dir
+        
+        # Create directory if folder_paths was None and we're using a local fallback
+        if not folder_paths and not os.path.exists(self.output_dir):
+            try:
+                os.makedirs(self.output_dir, exist_ok=True)
+            except Exception as e:
+                print(f"sokes_nodes.py load_random_image_sokes: Warning: Could not create temp directory {self.output_dir}: {e}")
+        elif folder_paths and self.type == "temp" and not os.path.exists(self.output_dir):
+            # This case should ideally be handled by ComfyUI itself ensuring temp dir exists
+            try:
+                os.makedirs(self.output_dir, exist_ok=True)
+            except Exception as e:
+                 print(f"sokes_nodes.py load_random_image_sokes: Warning: Could not create ComfyUI temp directory {self.output_dir}: {e}")
 
 
     @classmethod
@@ -194,18 +250,18 @@ class load_random_image_sokes:
                 "folder_path": ("STRING", {"default": ".", "multiline": False}),
                 "search_subfolders": ("BOOLEAN", {"default": False}),
                 "n_images": ("INT", {"default": 1, "min": 1, "max": 100}),
-                "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff}), # If sort=False, used for random shuffle. If sort=True, 0 or 1 selects 1st image, 2 selects 2nd, etc. (1-based index).
+                "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff}),
                 "sort": ("BOOLEAN", {"default": False}),
                 "export_with_alpha": ("BOOLEAN", {"default": False}),
             }
         }
 
     CATEGORY = "Sokes 🦬/Loaders"
-    RETURN_TYPES = ("IMAGE", "MASK", "LIST")
+    RETURN_TYPES = ("IMAGE", "MASK", "LIST") # LIST for image_path
     RETURN_NAMES = ("image", "mask", "image_path")
     FUNCTION = "load_image_or_file"
 
-    OUTPUT_NODE = True
+    OUTPUT_NODE = True # This node produces data and has previews, so True is appropriate.
 
     def find_image_files(self, folder_path, search_subfolders):
         image_paths = []
@@ -218,10 +274,13 @@ class load_random_image_sokes:
                         if os.path.isfile(full_path) and file.lower().endswith(tuple(img_extensions_lower)):
                            image_paths.append(full_path)
             else:
+                # Check if folder_path itself is valid before listing
+                if not os.path.isdir(folder_path):
+                    raise FileNotFoundError(f"Directory not found for listing: {folder_path}")
                 all_files = [os.path.join(folder_path, f) for f in os.listdir(folder_path)]
                 image_paths = [f for f in all_files if os.path.isfile(f) and f.lower().endswith(tuple(img_extensions_lower))]
-        except FileNotFoundError:
-             raise FileNotFoundError(f"Directory not found: {folder_path}")
+        except FileNotFoundError as fnf_e: # Catch specific error
+             raise fnf_e # Re-raise to be handled by caller
         except Exception as e:
             raise Exception(f"Error listing files in folder '{folder_path}': {e}")
         return image_paths
@@ -229,291 +288,343 @@ class load_random_image_sokes:
     def validate_and_load_image(self, image_path, final_image_mode):
         try:
             img_pil = Image.open(image_path)
-            img_pil = ImageOps.exif_transpose(img_pil)
+            img_pil = ImageOps.exif_transpose(img_pil) # Orient image based on EXIF
 
-            is_image_hdr = imghdr.what(image_path)
-            if not is_image_hdr:
+            # Validate image content using imghdr first
+            actual_format = imghdr.what(image_path)
+            if not actual_format:
+                # Fallback to PIL verification if imghdr fails but file might be valid PIL image
                 try:
-                    img_pil.verify()
+                    img_pil.verify() # This will raise an exception on corrupt images
                 except Exception as pil_e:
-                    raise ValueError(f"Invalid or corrupt image file (PIL verify failed): {image_path} - {str(pil_e)}")
-
+                    raise ValueError(f"Invalid or corrupt image file (PIL verify failed after imghdr): {image_path} - {str(pil_e)}")
+            
+            # Convert to the target mode (RGB or RGBA)
             if img_pil.mode == final_image_mode:
                  converted_image_pil = img_pil
             else:
                 converted_image_pil = img_pil.convert(final_image_mode)
 
             image_np = np.array(converted_image_pil).astype(np.float32) / 255.0
-            image_tensor = torch.from_numpy(image_np)[None,]
+            image_tensor = torch.from_numpy(image_np)[None,] # Add batch dimension
 
+            # Handle mask
             mask_tensor = None
+            # Check if original PIL image (before final_image_mode conversion) had alpha
             if img_pil.mode in ('RGBA', 'LA') or (img_pil.mode == 'P' and 'transparency' in img_pil.info):
-                if img_pil.mode != 'RGBA':
+                if final_image_mode == 'RGBA': # If we are exporting RGBA, use its alpha
+                    mask_pil_channel = converted_image_pil.split()[-1]
+                else: # If exporting RGB, but original had alpha, still extract alpha from an RGBA version
                     img_rgba_for_mask = img_pil.convert('RGBA')
-                else:
-                    img_rgba_for_mask = img_pil
-                mask_pil_channel = img_rgba_for_mask.split()[-1]
+                    mask_pil_channel = img_rgba_for_mask.split()[-1]
+                
                 mask_np = np.array(mask_pil_channel).astype(np.float32) / 255.0
-                mask_tensor = torch.from_numpy(mask_np)[None,]
-            else:
-                mask_shape = (image_tensor.shape[1], image_tensor.shape[2])
+                mask_tensor = torch.from_numpy(mask_np)[None,] # Add batch dimension
+            else: # No alpha, create a full white mask
+                mask_shape = (image_tensor.shape[1], image_tensor.shape[2]) # H, W
                 mask_np = np.ones(mask_shape, dtype=np.float32)
-                mask_tensor = torch.from_numpy(mask_np)[None,]
+                mask_tensor = torch.from_numpy(mask_np)[None,] # Add batch dimension
 
-            return image_tensor, mask_tensor, img_pil
+            return image_tensor, mask_tensor, converted_image_pil # Return the PIL image used for tensor (RGB or RGBA)
 
         except FileNotFoundError:
-            raise FileNotFoundError(f"Image file not found: {image_path}")
+            raise FileNotFoundError(f"Image file not found during validation/load: {image_path}")
+        except ValueError as ve: # Catch specific validation errors
+            raise ve
         except Exception as e:
             raise RuntimeError(f"Error loading/processing image {image_path}: {str(e)}")
 
 
-    def load_image_or_file(self, folder_path, search_subfolders, n_images, seed, sort, export_with_alpha):
+    def load_image_or_file(self, folder_path: str, search_subfolders: bool, n_images: int, seed: int, sort: bool, export_with_alpha: bool):
         selected_paths = []
-        # input_is_file = False # Not strictly needed with current logic flow
-        resolved_path = folder_path
-
-        is_file_check_path = resolved_path
-        if folder_paths and not os.path.isabs(resolved_path) and (not os.path.exists(resolved_path)):
-             maybe_resolved = folder_paths.get_annotated_filepath(resolved_path)
-             if maybe_resolved and os.path.exists(maybe_resolved):
-                 is_file_check_path = maybe_resolved
-             else:
+        resolved_path_input = folder_path # Keep original for messages
+        
+        # Attempt to resolve path using folder_paths if available
+        current_check_path = folder_path
+        if folder_paths:
+            # Check if it's an annotated path first
+            annotated_path = folder_paths.get_annotated_filepath(folder_path)
+            if annotated_path and os.path.exists(annotated_path):
+                current_check_path = annotated_path
+            elif not os.path.isabs(folder_path): # If not absolute and not annotated, try input dir
                 input_dir = folder_paths.get_input_directory()
                 if input_dir:
-                    maybe_resolved_input = os.path.join(input_dir, resolved_path)
-                    if os.path.exists(maybe_resolved_input):
-                        is_file_check_path = maybe_resolved_input
+                    path_in_input_dir = os.path.join(input_dir, folder_path)
+                    if os.path.exists(path_in_input_dir):
+                        current_check_path = path_in_input_dir
+        
+        # If still not found, check original path (could be absolute or relative to CWD if folder_paths is not used)
+        if not os.path.exists(current_check_path):
+             # Final check against the raw input in case it was absolute and folder_paths failed
+             if os.path.exists(folder_path):
+                 current_check_path = folder_path
+             else:
+                raise FileNotFoundError(f"Input path '{resolved_path_input}' could not be resolved or found. Checked: '{current_check_path}'")
 
-        if os.path.isfile(is_file_check_path):
+        if os.path.isfile(current_check_path):
             img_extensions_lower = [ext.lower() for ext in self.IMG_EXTENSIONS]
-            if any(is_file_check_path.lower().endswith(ext) for ext in img_extensions_lower):
-                selected_paths = [is_file_check_path]
-                # input_is_file = True
-                resolved_path = is_file_check_path
-                #print(f"Input is a single file: {resolved_path}")
+            if any(current_check_path.lower().endswith(ext) for ext in img_extensions_lower):
+                selected_paths = [current_check_path]
             else:
-                raise ValueError(f"Input file '{resolved_path}' is not a recognized image type: {self.IMG_EXTENSIONS}")
+                raise ValueError(f"Input file '{current_check_path}' is not a recognized image type: {self.IMG_EXTENSIONS}")
 
-        elif os.path.isdir(is_file_check_path):
-             resolved_path = is_file_check_path
-             #print(f"Input is a folder: {resolved_path}. Searching (subfolders: {search_subfolders})...")
+        elif os.path.isdir(current_check_path):
              try:
-                 image_paths_found = self.find_image_files(resolved_path, search_subfolders)
+                 image_paths_found = self.find_image_files(current_check_path, search_subfolders)
+             except FileNotFoundError: # Should be caught by os.path.isdir, but as a safeguard
+                 raise FileNotFoundError(f"Directory '{current_check_path}' seems to have disappeared or is not accessible.")
              except Exception as e:
-                 raise Exception(f"Error finding image files in '{resolved_path}': {e}")
+                 raise Exception(f"Error finding image files in '{current_check_path}': {e}")
 
              valid_image_paths = []
              for f_path in image_paths_found:
                  try:
+                     # Basic check with imghdr first (fast)
                      is_image_hdr = imghdr.what(f_path)
                      if is_image_hdr:
                           valid_image_paths.append(f_path)
                           continue
-                     else:
+                     else: # If imghdr fails, try PIL verify (slower but more comprehensive for some formats)
                          try:
                              with Image.open(f_path) as img_test:
-                                 img_test.verify()
+                                 img_test.verify() # Will raise exception on many invalid image types/corruptions
                              valid_image_paths.append(f_path)
-                         except Exception as pil_e:
-                              print(f"Skipping file in folder (PIL verify failed): {f_path} - {str(pil_e)}")
-                 except Exception as e:
-                      print(f"Skipping potentially corrupt/unreadable file in folder: {f_path} - {str(e)}")
-
+                         except Exception: # PIL verify failed
+                              print(f"sokes_nodes.py: Skipping file (PIL verify failed): {f_path}")
+                 except Exception as e_outer: # Error with imghdr or other OS issues
+                      print(f"sokes_nodes.py: Skipping potentially corrupt/unreadable file: {f_path} - {str(e_outer)}")
+             
              if not valid_image_paths:
                  search_scope = "and its subfolders" if search_subfolders else "(subfolders not searched)"
-                 raise ValueError(f"No valid images found in folder: {resolved_path} {search_scope}")
+                 raise ValueError(f"No valid images found in folder: {current_check_path} {search_scope}")
 
              num_available = len(valid_image_paths)
              actual_n_images = min(n_images, num_available) if n_images > 0 else num_available
-             if actual_n_images == 0 and num_available > 0 : # if n_images was 0, actual_n_images becomes num_available
+             
+             if actual_n_images == 0 and num_available > 0 :
                  actual_n_images = num_available
              elif actual_n_images == 0 and num_available == 0:
-                 raise ValueError(f"No valid images to load from folder: {resolved_path}")
-
+                 raise ValueError(f"No valid images to load from folder: {current_check_path}")
 
              if actual_n_images < n_images and n_images > 0 :
-                  print(f"Warning: Requested {n_images} images, but only {num_available} were found/valid in '{resolved_path}'. Loading {actual_n_images}.")
+                  print(f"sokes_nodes.py: Warning: Requested {n_images} images, but only {num_available} were found/valid in '{current_check_path}'. Loading {actual_n_images}.")
 
              if not sort:
                  random.seed(seed)
                  random.shuffle(valid_image_paths)
                  selected_paths = valid_image_paths[:actual_n_images]
-                 #if selected_paths:
-                     #print(f"Sort=False: Selected {len(selected_paths)} image(s) randomly using seed {seed}.")
-             else: # sort is True
+             else:
                  def natural_sort_key(s):
-                    # Sort by basename for natural file order
                     return [int(text) if text.isdigit() else text.lower() for text in re.split(r'([0-9]+)', os.path.basename(s))]
-                 
-                 valid_image_paths = sorted(valid_image_paths, key=natural_sort_key)
+                 valid_image_paths_sorted = sorted(valid_image_paths, key=natural_sort_key)
 
-                 # Interpret seed as 1-based index for sorted list
-                 # seed = 0 or 1 maps to the first image (index 0)
-                 # seed = 2 maps to the second image (index 1), etc.
-                 if seed <= 1: # UI seed 0 or 1
-                     start_python_index = 0
-                 else: # UI seed > 1
-                     start_python_index = (seed - 1) % num_available
-                
+                 start_python_index = 0
+                 if seed > 0: # Treat seed 0 as "first image regardless of list length", 1 as first, 2 as second etc.
+                    start_python_index = (seed -1) % num_available if num_available > 0 else 0
+                 
                  selected_paths = []
                  for i in range(actual_n_images):
-                     current_index = (start_python_index + i) % num_available
-                     selected_paths.append(valid_image_paths[current_index])
-                 
-                 #if selected_paths:
-                 #   if n_images == 1:
-                 #       #print(f"Sort=True, n_images=1: Selecting sorted image at 1-based index {start_python_index + 1} (seed {seed}) from {num_available} images: {os.path.basename(selected_paths[0])}")
-                 #   else:
-                 #       #print(f"Sort=True, n_images={len(selected_paths)}: Selecting batch starting at 1-based index {start_python_index + 1} (seed {seed}), with wrapping.")
+                     current_idx = (start_python_index + i) % num_available
+                     selected_paths.append(valid_image_paths_sorted[current_idx])
         else:
-             raise FileNotFoundError(f"Input path '{folder_path}' (resolved check path: '{is_file_check_path}') is not a valid file or directory.")
+             raise FileNotFoundError(f"Input path '{resolved_path_input}' (resolved to '{current_check_path}') is not a valid file or directory.")
 
-        if not selected_paths: # Should be caught earlier, but as a final check
+        if not selected_paths:
             raise ValueError("No images were selected to load. Check path, folder contents, or parameters.")
 
-        output_images = []
-        output_masks = []
-        loaded_paths = []
-        preview_pil_images = []
-        first_image_shape_hw = None
+        output_images_tensor_list = []
+        output_masks_tensor_list = []
+        loaded_paths_list = []
+        pil_images_for_preview = [] # Store PIL images (in final RGB/RGBA format) for preview
+        first_image_shape_hwc = None
 
-        force_batch_to_rgba = False
-        if export_with_alpha and selected_paths:
+        # Determine final image mode (RGB or RGBA)
+        # If export_with_alpha is True, check if ANY selected image has alpha. If so, convert all to RGBA.
+        # Otherwise, all to RGB.
+        final_image_mode = "RGB"
+        if export_with_alpha:
             for image_path_check in selected_paths:
                 try:
                     with Image.open(image_path_check) as img_pil_check:
-                         if img_pil_check.mode in ('RGBA', 'LA') or (img_pil_check.mode == 'P' and 'transparency' in img_pil_check.info):
-                            force_batch_to_rgba = True
-                            break
+                         if img_pil_check.mode in ('RGBA', 'LA') or \
+                            (img_pil_check.mode == 'P' and 'transparency' in img_pil_check.info):
+                            final_image_mode = "RGBA"
+                            break # Found one with alpha, all will be RGBA
                 except Exception as e:
-                    print(f"⚠️ Warning: Could not pre-check image {image_path_check} for alpha: {e}. Assuming no alpha.")
-
-        final_image_mode = "RGB"
-        if export_with_alpha and force_batch_to_rgba:
-            final_image_mode = "RGBA"
-        elif not export_with_alpha: # or (export_with_alpha and not force_batch_to_rgba)
-            final_image_mode = "RGB"
+                    print(f"sokes_nodes.py: Warning: Could not pre-check image {os.path.basename(image_path_check)} for alpha: {e}. Assuming no alpha for this image in pre-check.")
+        
+        print(f"sokes_nodes.py: Final image processing mode for batch: {final_image_mode}")
 
         for image_path in selected_paths:
              try:
                  image_tensor, mask_tensor, loaded_pil_image = self.validate_and_load_image(image_path, final_image_mode)
 
-                 current_shape_hw = image_tensor.shape[1:3]
-                 if first_image_shape_hw is None:
-                     first_image_shape_hw = current_shape_hw
-                 elif current_shape_hw != first_image_shape_hw and len(selected_paths) > 1:
-                     print(f"⚠️ Warning: Image {os.path.basename(image_path)} dimensions ({current_shape_hw}) "
-                           f"differ from first image ({first_image_shape_hw}). Batch may be inconsistent.")
+                 current_shape_hwc = image_tensor.shape[1:4] # H, W, C
+                 if first_image_shape_hwc is None:
+                     first_image_shape_hwc = current_shape_hwc
+                 elif current_shape_hwc != first_image_shape_hwc and len(selected_paths) > 1:
+                     print(f"sokes_nodes.py: ⚠️ Warning: Image {os.path.basename(image_path)} dimensions/channels ({current_shape_hwc}) "
+                           f"differ from first image ({first_image_shape_hwc}). Batch may be inconsistent if not handled by subsequent nodes.")
 
-                 output_images.append(image_tensor)
-                 output_masks.append(mask_tensor)
-                 loaded_paths.append(image_path)
-                 preview_pil_images.append(loaded_pil_image)
+                 output_images_tensor_list.append(image_tensor)
+                 output_masks_tensor_list.append(mask_tensor)
+                 loaded_paths_list.append(image_path)
+                 pil_images_for_preview.append(loaded_pil_image) # Add the loaded PIL image for preview
 
              except (ValueError, RuntimeError, FileNotFoundError) as e:
-                 print(f"❌ Skipping image {image_path}: {str(e)}")
+                 print(f"sokes_nodes.py: ❌ Skipping image {os.path.basename(image_path)}: {str(e)}")
                  continue
-             except Exception as e:
-                 print(f"❌ Unexpected error processing image {image_path}: {str(e)}. Skipping.")
+             except Exception as e_unexp: # Catch any other unexpected error during load of a specific image
+                 print(f"sokes_nodes.py: ❌ Unexpected error processing image {os.path.basename(image_path)}: {str(e_unexp)}. Skipping.")
                  continue
 
-        if not output_images:
-             raise ValueError("No images were successfully loaded.")
+        if not output_images_tensor_list:
+             raise ValueError("No images were successfully loaded into tensors.")
 
-        final_image_batch = torch.cat(output_images, dim=0)
-        final_mask_batch = torch.cat(output_masks, dim=0)
+        final_image_batch = torch.cat(output_images_tensor_list, dim=0)
+        final_mask_batch = torch.cat(output_masks_tensor_list, dim=0)
 
-        previews_out = []
-        if preview_available and preview_pil_images:
-            for i, pil_img in enumerate(preview_pil_images):
+        # --- Preview Generation ---
+        previews_out_list = []
+        if preview_available and pil_images_for_preview: # Use global preview_available flag
+            # Ensure the specific subfolder for these previews exists
+            preview_subfolder_name = "sokes_nodes_previews" # Specific to this node pack
+            full_preview_output_folder = os.path.join(self.output_dir, preview_subfolder_name)
+            if not os.path.exists(full_preview_output_folder):
                 try:
-                    basename = os.path.basename(loaded_paths[i])
-                    subfolder = "sokes_previews"
-                    filename = f"preview_{hashlib.sha1(loaded_paths[i].encode()).hexdigest()}_{i}.png"
+                    os.makedirs(full_preview_output_folder, exist_ok=True)
+                except Exception as e:
+                    print(f"sokes_nodes.py: Error creating preview subfolder {full_preview_output_folder}: {e}. Previews may fail.")
+                    # Potentially disable previews here if folder creation is critical and fails
 
-                    full_output_folder = os.path.join(self.output_dir, subfolder)
-                    if not os.path.exists(full_output_folder):
-                         os.makedirs(full_output_folder, exist_ok=True)
+            for i, pil_img in enumerate(pil_images_for_preview):
+                try:
+                    # Use a hash of the original path for a more unique filename
+                    # Basename might not be unique if loading from different subfolders with same image name
+                    unique_hash = hashlib.sha1(loaded_paths_list[i].encode('utf-8')).hexdigest()[:10]
+                    preview_filename = f"preview_{unique_hash}_{i}.png" # Always save as PNG for previews
 
-                    filepath = os.path.join(full_output_folder, filename)
-                    pil_img.save(filepath, compress_level=4)
-                    previews_out.append({
-                        "filename": filename,
-                        "subfolder": subfolder,
-                        "type": self.type
+                    filepath = os.path.join(full_preview_output_folder, preview_filename)
+                    pil_img.save(filepath, compress_level=4) # PIL uses compress_level for PNG
+                    
+                    previews_out_list.append({
+                        "filename": preview_filename,
+                        "subfolder": preview_subfolder_name, # Use the specific subfolder
+                        "type": self.type # Should be "temp"
                     })
                 except Exception as e:
-                    print(f"Error generating preview for {loaded_paths[i]}: {e}")
-
-        result = {
-            "ui": {"images": previews_out},
-            "result": (final_image_batch, final_mask_batch, loaded_paths)
-        }
-        return result
+                    print(f"sokes_nodes.py: Error generating preview for {os.path.basename(loaded_paths_list[i])}: {e}")
+        
+        # Return dictionary for ComfyUI
+        # The 'ui' key with 'images' is for previews
+        # The 'result' tuple matches RETURN_TYPES
+        return {"ui": {"images": previews_out_list}, 
+                "result": (final_image_batch, final_mask_batch, loaded_paths_list)}
 
 
     @classmethod
     def IS_CHANGED(cls, folder_path, search_subfolders, n_images, seed, sort, export_with_alpha):
-        resolved_path = folder_path
+        # This method is crucial for ComfyUI to know if it needs to re-run the node.
+        # It should return a hash or a unique string based on inputs that affect the output.
+        
+        # Resolve path similarly to how load_image_or_file does for consistency
+        current_check_path = folder_path
+        if folder_paths:
+            annotated_path = folder_paths.get_annotated_filepath(folder_path)
+            if annotated_path and os.path.exists(annotated_path):
+                current_check_path = annotated_path
+            elif not os.path.isabs(folder_path):
+                input_dir = folder_paths.get_input_directory()
+                if input_dir:
+                    path_in_input_dir = os.path.join(input_dir, folder_path)
+                    if os.path.exists(path_in_input_dir):
+                        current_check_path = path_in_input_dir
+        
+        if not os.path.exists(current_check_path):
+             if os.path.exists(folder_path): # Fallback to original if check path doesn't exist but original does
+                 current_check_path = folder_path
+             else: # Path truly not found
+                 return f"path_not_found_{folder_path}_{search_subfolders}_{n_images}_{seed}_{sort}_{export_with_alpha}"
 
-        if folder_paths and not os.path.isabs(resolved_path) and (not os.path.exists(resolved_path)):
-             maybe_resolved = folder_paths.get_annotated_filepath(resolved_path)
-             if maybe_resolved and os.path.exists(maybe_resolved):
-                 resolved_path = maybe_resolved
-             else:
-                 input_dir = folder_paths.get_input_directory()
-                 if input_dir:
-                     maybe_resolved_input = os.path.join(input_dir, resolved_path)
-                     if os.path.exists(maybe_resolved_input):
-                         resolved_path = maybe_resolved_input
-        try:
-            if os.path.isfile(resolved_path):
-                img_extensions_lower = [ext.lower() for ext in cls.IMG_EXTENSIONS]
-                if any(resolved_path.lower().endswith(ext) for ext in img_extensions_lower):
-                    # is_file = True
-                    mtime = os.path.getmtime(resolved_path)
-                    # For single file, n_images, seed, sort, search_subfolders are ignored by current loading logic
-                    return f"file_{resolved_path}_{mtime}_{export_with_alpha}"
-                else:
-                     return f"invalid_file_type_{resolved_path}"
-
-            elif os.path.isdir(resolved_path):
-                # is_dir = True
-                image_paths = []
-                img_extensions_lower = [ext.lower() for ext in cls.IMG_EXTENSIONS]
-                if search_subfolders:
-                     for root, _, files in os.walk(resolved_path):
-                        for file_name in files: # Renamed 'file' to 'file_name' to avoid conflict
-                             full_path = os.path.join(root, file_name)
-                             if os.path.isfile(full_path) and file_name.lower().endswith(tuple(img_extensions_lower)):
-                                image_paths.append(full_path)
-                else:
-                    all_files = [os.path.join(resolved_path, f) for f in os.listdir(resolved_path)]
-                    image_paths = [f for f in all_files if os.path.isfile(f) and f.lower().endswith(tuple(img_extensions_lower))]
-
-                if not image_paths:
-                    # seed is relevant as it's part of the input state
-                    return f"no_images_in_dir_{resolved_path}_{search_subfolders}_{n_images}_{sort}_{export_with_alpha}_{seed}"
-
-                # Sort lexicographically for consistent file list hash
-                image_paths_for_hash = sorted(image_paths)
-                mtimes = [os.path.getmtime(f) for f in image_paths_for_hash]
-                file_info_tuple = tuple(zip(image_paths_for_hash, mtimes))
-                hasher = hashlib.sha256()
-                hasher.update(str(file_info_tuple).encode('utf-8'))
-                file_list_hash = hasher.hexdigest()
+        file_info_hash_part = ""
+        if os.path.isfile(current_check_path):
+            try:
+                mtime = os.path.getmtime(current_check_path)
+                fsize = os.path.getsize(current_check_path)
+                file_info_hash_part = f"file_{current_check_path}_{mtime}_{fsize}"
+            except Exception as e:
+                file_info_hash_part = f"file_error_{current_check_path}_{e}"
+        elif os.path.isdir(current_check_path):
+            try:
+                # For directories, we need to consider the list of files and their mtimes
+                # This is a simplified version; a more robust one would walk the dir like find_image_files
+                # and hash the relevant file list + mtimes.
+                # For now, let's use the directory's own mtime and a quick list of files.
+                dir_mtime = os.path.getmtime(current_check_path)
                 
-                # Seed is now relevant for both sort=True (start index) and sort=False (shuffle)
-                return f"dir_{file_list_hash}_{search_subfolders}_{n_images}_{sort}_{export_with_alpha}_{seed}"
-            else:
-                 return f"path_not_found_{resolved_path}"
-        except Exception as e:
-             print(f"sokes_nodes.py IS_CHANGED Error: {e}")
-             return float("NaN")
+                # Simplified: just hash directory mtime and count of top-level items for performance.
+                # A full file list hash can be slow for large directories.
+                # If deep subfolder changes matter a lot, this might need to be more thorough.
+                num_items = 0
+                try: # os.listdir can fail on permission issues
+                    num_items = len(os.listdir(current_check_path))
+                except:
+                    pass # keep num_items = 0
+                
+                file_info_hash_part = f"dir_{current_check_path}_{dir_mtime}_{num_items}"
+                if search_subfolders: # If searching subfolders, a more complex hash is needed
+                                      # For simplicity, just add a flag for now.
+                    # A truly robust subfolder check would walk and hash all relevant file paths/mtimes
+                    # This is a placeholder to make it change if search_subfolders changes.
+                    # To be more accurate, it should reflect the actual file list that would be found.
+                    # For now, this simple approach:
+                    # The most accurate way would be to call a light version of find_image_files here
+                    # and hash its results (paths and mtimes).
+                    # Let's make a more robust version for directories:
+                    image_paths_for_hash = []
+                    img_extensions_lower = [ext.lower() for ext in cls.IMG_EXTENSIONS] # Access via cls
+                    
+                    # Simplified walk for hashing, only considering file names and mtimes
+                    # This can still be slow for very large directories.
+                    mtimes_list = []
+                    try:
+                        if search_subfolders:
+                            for root, _, files in os.walk(current_check_path):
+                                for file_name in files:
+                                    if file_name.lower().endswith(tuple(img_extensions_lower)):
+                                        try:
+                                            full_p = os.path.join(root, file_name)
+                                            mtimes_list.append(os.path.getmtime(full_p))
+                                        except: pass # Ignore files that disappear or are inaccessible
+                        else:
+                            if os.path.isdir(current_check_path): # Ensure it's still a dir
+                                for f_name in os.listdir(current_check_path):
+                                    full_p = os.path.join(current_check_path, f_name)
+                                    if os.path.isfile(full_p) and f_name.lower().endswith(tuple(img_extensions_lower)):
+                                        try:
+                                            mtimes_list.append(os.path.getmtime(full_p))
+                                        except: pass
+                    except Exception:
+                        pass # If listing fails, mtimes_list will be empty
+
+                    hasher = hashlib.sha256()
+                    hasher.update(str(sorted(mtimes_list)).encode('utf-8')) # Hash sorted mtimes
+                    dir_content_hash = hasher.hexdigest()
+                    file_info_hash_part = f"dir_content_{current_check_path}_{dir_content_hash}"
+
+            except Exception as e:
+                file_info_hash_part = f"dir_error_{current_check_path}_{e}"
+        
+        # Combine all relevant input parameters into the hash
+        unique_string = f"{file_info_hash_part}_{search_subfolders}_{n_images}_{seed}_{sort}_{export_with_alpha}"
+        # Using hashlib for a more compact and consistent hash
+        h = hashlib.sha256()
+        h.update(unique_string.encode('utf-8'))
+        return h.hexdigest()
 
 # END Load Random Image/File with Path and Mask | Sokes 🦬
 ##############################################################
+
 
 ##############################################################
 # START Hex to Color Name | Sokes 🦬
@@ -539,89 +650,91 @@ class hex_to_color_name_sokes:
         }
 
     def hex_to_color_name_fn(self, hex_color, use_css_name=False):
-        # ... Input Sanitization ...
         if not hex_color: return ("Input hex color is empty.",)
-        hex_color = hex_color.strip()
-        if not hex_color.startswith("#"): hex_color = "#" + hex_color
-        if len(hex_color) == 4: hex_color = f"#{hex_color[1]*2}{hex_color[2]*2}{hex_color[3]*2}"
-        if len(hex_color) != 7: return (f"Invalid hex format: {hex_color}",)
+        hex_color_proc = hex_color.strip()
+        if not hex_color_proc.startswith("#"): hex_color_proc = "#" + hex_color_proc
+        if len(hex_color_proc) == 4: # Expand shorthand hex #RGB to #RRGGBB
+            hex_color_proc = f"#{hex_color_proc[1]*2}{hex_color_proc[2]*2}{hex_color_proc[3]*2}"
+        if len(hex_color_proc) != 7: return (f"Invalid hex format: {hex_color} (processed: {hex_color_proc})",)
 
-
-        # --- 1) Exact CSS3 Match ---
         try:
-            standard_name = webcolors.hex_to_name(hex_color, spec="css3")
+            standard_name = webcolors.hex_to_name(hex_color_proc, spec="css3")
             final_color_name = standard_name
             if not use_css_name:
                  final_color_name = human_readable_map.get(standard_name, standard_name)
-                 if final_color_name is None: final_color_name = standard_name
             return (final_color_name,)
-        except ValueError:
-            # --- 2) Fallback: Find Nearest Color ---
+        except ValueError: # Not an exact CSS3 name
             try:
-                requested_rgb = webcolors.hex_to_rgb(hex_color)
-                requested_lab = convert_color(sRGBColor(*requested_rgb, is_upscaled=True), LabColor)
-            except Exception as e: return (f"Invalid input hex/conversion error: {e}",)
+                requested_rgb = webcolors.hex_to_rgb(hex_color_proc)
+                # Ensure RGB values are within 0-255 before creating sRGBColor
+                requested_rgb_clamped = tuple(max(0, min(255, c)) for c in requested_rgb)
+                requested_lab = convert_color(sRGBColor(*requested_rgb_clamped, is_upscaled=True), LabColor)
+            except Exception as e:
+                return (f"Invalid input hex '{hex_color_proc}' or conversion error: {e}",)
 
             min_dist = float('inf')
-            closest_name = None
-            checked_hex_codes = set()
-
-            # --- Check EXPLICIT TARGETS first ---
+            closest_name_internal = None # Store the internal name (CSS3 or explicit target key)
+            
+            # Explicit targets first
             for target_name, target_hex in explicit_targets_for_comparison.items():
-                 if len(target_hex) == 4: target_hex = f"#{target_hex[1]*2}{target_hex[2]*2}{target_hex[3]*2}"
-                 if target_hex in checked_hex_codes: continue
-                 try:
-                     target_rgb = webcolors.hex_to_rgb(target_hex)
-                     target_lab = convert_color(sRGBColor(*target_rgb, is_upscaled=True), LabColor)
-                     d = delta_e_cie2000(requested_lab, target_lab)
-                     if d < min_dist:
-                         min_dist = d
-                         closest_name = target_name
-                     checked_hex_codes.add(target_hex)
-                 except Exception as e: print(f"Warn: Cannot process explicit target {target_name}: {e}")
+                proc_target_hex = target_hex.strip()
+                if not proc_target_hex.startswith("#"): proc_target_hex = "#" + proc_target_hex
+                if len(proc_target_hex) == 4:
+                    proc_target_hex = f"#{proc_target_hex[1]*2}{proc_target_hex[2]*2}{proc_target_hex[3]*2}"
+                if len(proc_target_hex) != 7: continue
 
+                try:
+                    target_rgb = webcolors.hex_to_rgb(proc_target_hex)
+                    target_rgb_clamped = tuple(max(0, min(255, c)) for c in target_rgb)
+                    target_lab = convert_color(sRGBColor(*target_rgb_clamped, is_upscaled=True), LabColor)
+                    d = delta_e_cie2000(requested_lab, target_lab)
+                    if d < min_dist:
+                        min_dist = d
+                        closest_name_internal = target_name # Use the key from explicit_targets
+                except Exception as e:
+                    print(f"sokes_nodes.py hex_to_color: Warn: Cannot process explicit target {target_name} ({target_hex}): {e}")
 
-            # --- Iterate through STANDARD CSS3 colors ---
-            # <<< Use the imported css3_names_to_hex dictionary here >>>
+            # Then standard CSS3 colors
             for name, candidate_hex in css3_names_to_hex.items():
-                 if len(candidate_hex) == 4: candidate_hex = f"#{candidate_hex[1]*2}{candidate_hex[2]*2}{candidate_hex[3]*2}"
-                 if candidate_hex in checked_hex_codes: continue # Skip if already checked
-                 try:
-                    cand_rgb = webcolors.hex_to_rgb(candidate_hex)
-                    cand_lab = convert_color(sRGBColor(*cand_rgb, is_upscaled=True), LabColor)
+                proc_candidate_hex = candidate_hex.strip()
+                if not proc_candidate_hex.startswith("#"): proc_candidate_hex = "#" + proc_candidate_hex
+                if len(proc_candidate_hex) == 4:
+                     proc_candidate_hex = f"#{proc_candidate_hex[1]*2}{proc_candidate_hex[2]*2}{proc_candidate_hex[3]*2}"
+                if len(proc_candidate_hex) != 7: continue
+
+                try:
+                    cand_rgb = webcolors.hex_to_rgb(proc_candidate_hex)
+                    cand_rgb_clamped = tuple(max(0, min(255, c)) for c in cand_rgb)
+                    cand_lab = convert_color(sRGBColor(*cand_rgb_clamped, is_upscaled=True), LabColor)
                     d = delta_e_cie2000(requested_lab, cand_lab)
                     if d < min_dist:
                         min_dist = d
-                        closest_name = name # Update to the standard CSS3 name
-                    checked_hex_codes.add(candidate_hex) # Add here to avoid potential re-check errors
-                 except Exception as e: print(f"Warn: Error processing candidate {name}: {e}")
+                        closest_name_internal = name # This is a CSS3 name
+                except Exception as e:
+                    print(f"sokes_nodes.py hex_to_color: Warn: Error processing CSS3 candidate {name} ({candidate_hex}): {e}")
+            
+            if closest_name_internal is None: return ("Could not find any closest color match.",)
 
-            if closest_name is None: return ("Could not find closest color.",)
-
-            # --- 3) Map the closest internal name found ---
-            final_color_name = closest_name
-            if not use_css_name:
-                mapped_name = human_readable_map.get(closest_name)
-                if mapped_name: final_color_name = mapped_name
-                else: final_color_name = closest_name # Fallback if no mapping
-
+            # Map the found internal name (CSS3 or explicit key) to human-readable if not use_css_name
+            if use_css_name:
+                # If closest was from explicit_targets, and we need CSS name, we might need to find its CSS name if it has one
+                # or just return the explicit target's name if it's deemed "CSS-like enough"
+                # For simplicity now, if use_css_name is true, and closest_name_internal is from explicit_targets,
+                # we will return closest_name_internal. If it was a CSS3 name, that's fine too.
+                final_color_name = closest_name_internal
+            else: # Map to human readable
+                final_color_name = human_readable_map.get(closest_name_internal, closest_name_internal)
+            
             return (final_color_name,)
 
 # END: Hex to Color Name | Sokes 🦬
 ##############################################################
 
+
 ##############################################################
 # START Random Number | Sokes 🦬
-# Fixed bug and now maintaining. Originally from WAS_Node_Suite / WAS_Random_Number
 class random_number_sokes:
-    """
-    Generates a primary random float, and derives an integer (rounded)
-    and a boolean from it. All outputs are always populated based on
-    a single random float generation.
-    """
     CATEGORY = "Sokes 🦬"
-
-    # This defines the order and type of outputs from left to right on the node
     RETURN_TYPES = ("INT", "FLOAT", "BOOLEAN")
     RETURN_NAMES = ("integer_output", "float_output", "boolean_output")
     FUNCTION = "generate_random_value"
@@ -637,29 +750,28 @@ class random_number_sokes:
         }
 
     def generate_random_value(self, minimum, maximum, seed):
+        # Ensure min <= max
+        min_val = min(minimum, maximum)
+        max_val = max(minimum, maximum)
+
         random.seed(seed)
-
-        # 1. Generate the primary random float
-        primary_float = random.uniform(minimum, maximum)
-
-        # 2. Derive the integer output
+        primary_float = random.uniform(min_val, max_val)
         derived_int = int(round(primary_float))
-
-        # 3. Derive the boolean output
-        midpoint = minimum + (maximum - minimum) / 2.0
+        
+        midpoint = min_val + (max_val - min_val) / 2.0
         derived_bool = primary_float > midpoint
 
-        # Return values in the order defined by RETURN_TYPES and RETURN_NAMES
-        # INT first, then FLOAT, then BOOLEAN
         return (derived_int, primary_float, derived_bool)
 
     @classmethod
     def IS_CHANGED(cls, minimum, maximum, seed):
-        m = hashlib.sha256()
-        m.update(str(minimum).encode('utf-8'))
-        m.update(str(maximum).encode('utf-8'))
-        m.update(str(seed).encode('utf-8'))
-        return m.digest().hex()
+        # IS_CHANGED should reflect anything that would change the output if the node were re-run
+        # For a random number generator, the seed is paramount. Min/max also change the range.
+        h = hashlib.sha256()
+        h.update(str(minimum).encode('utf-8'))
+        h.update(str(maximum).encode('utf-8'))
+        h.update(str(seed).encode('utf-8'))
+        return h.hexdigest()
 # END: Random Number | Sokes 🦬
 ##############################################################
 
