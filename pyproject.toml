@@ -1,0 +1,14 @@
+[project]
+name = "ComfyUI Sokes Nodes"
+description = "A small node suite for ComfyUI"
+version = "1.0.5"
+license = { text = "MIT License" }
+
+[project.urls]
+Repository = "https://github.com/m-sokes/ComfyUI-Sokes-Nodes"
+#  Used by Comfy Registry https://comfyregistry.org
+
+[tool.comfy]
+PublisherId = "mike_sokol"
+DisplayName = "ComfyUI-Sokes-Nodes"
+Icon = ""
