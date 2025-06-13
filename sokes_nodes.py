@@ -219,7 +219,8 @@ class load_random_image_sokes:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "folder_path": ("STRING", {"default": "", "multiline": False}),
+                "folder_path": ("STRING", {"default": "", "multiline": True}),
+                "filename_optional": ("STRING", {"default": "", "multiline": False}),
                 "search_subfolders": ("BOOLEAN", {"default": False}),
                 "n_images": ("INT", {"default": 1, "min": 1, "max": 100}),
                 "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff}),
@@ -270,9 +271,9 @@ class load_random_image_sokes:
         try:
             if search_subfolders:
                 for root, _, files in os.walk(folder_path_abs):
-                    for file_name in files:
-                        if file_name.lower().endswith(tuple(img_extensions_lower)):
-                           full_path = os.path.join(root, file_name) # root from os.walk is already absolute
+                    for file_name_in_walk in files:
+                        if file_name_in_walk.lower().endswith(tuple(img_extensions_lower)):
+                           full_path = os.path.join(root, file_name_in_walk) # root from os.walk is already absolute
                            if os.path.isfile(full_path):
                                image_paths.append(os.path.normpath(full_path))
             else:
@@ -318,13 +319,19 @@ class load_random_image_sokes:
         except Exception as e:
             raise RuntimeError(f"Error loading/processing image {os.path.basename(image_path_abs)}: {e}")
 
-    def load_image_or_file(self, folder_path: str, search_subfolders: bool, n_images: int, seed: int, sort: bool, export_with_alpha: bool):
+    def load_image_or_file(self, folder_path, filename_optional, search_subfolders, n_images, seed, sort, export_with_alpha):
         selected_paths_abs = []
         
-        resolved_base_path_abs = self._resolve_path(folder_path)
+        # Combine folder and file name to get the full path to check
+        input_path = folder_path
+        if filename_optional and filename_optional.strip():
+            # os.path.join correctly handles slashes and platform differences
+            input_path = os.path.join(folder_path, filename_optional)
+        
+        resolved_base_path_abs = self._resolve_path(input_path)
 
         if not os.path.exists(resolved_base_path_abs): # Check after full resolution attempt
-            raise FileNotFoundError(f"Input path '{folder_path}' (resolved to '{resolved_base_path_abs}') does not exist.")
+            raise FileNotFoundError(f"Input path '{input_path}' (resolved to '{resolved_base_path_abs}') does not exist.")
 
         if os.path.isfile(resolved_base_path_abs):
             if any(resolved_base_path_abs.lower().endswith(ext) for ext in self.IMG_EXTENSIONS):
@@ -374,7 +381,7 @@ class load_random_image_sokes:
                 
                 selected_paths_abs = [valid_image_paths_sorted[(start_python_index + i) % num_available] for i in range(actual_n_images)]
         else:
-            raise FileNotFoundError(f"Input path '{folder_path}' (resolved to '{resolved_base_path_abs}') is not a valid file or directory.")
+            raise FileNotFoundError(f"Input path '{input_path}' (resolved to '{resolved_base_path_abs}') is not a valid file or directory.")
 
         if not selected_paths_abs: raise ValueError("No images were selected to load for processing.")
 
@@ -446,12 +453,17 @@ class load_random_image_sokes:
         return {"ui": {"images": previews_out_list}, "result": (final_image_batch, final_mask_batch, loaded_paths_final_abs)}
 
     @classmethod
-    def IS_CHANGED(cls, folder_path, search_subfolders, n_images, seed, sort, export_with_alpha):
+    def IS_CHANGED(cls, folder_path, filename_optional, search_subfolders, n_images, seed, sort, export_with_alpha):
         instance = cls() # Create instance to use _resolve_path
-        resolved_base_path_abs = instance._resolve_path(folder_path)
+
+        input_path = folder_path
+        if filename_optional and filename_optional.strip():
+            input_path = os.path.join(folder_path, filename_optional)
+
+        resolved_base_path_abs = instance._resolve_path(input_path)
 
         if not os.path.exists(resolved_base_path_abs):
-            return f"path_not_found_{resolved_base_path_abs}_{search_subfolders}_{n_images}_{seed}_{sort}_{export_with_alpha}"
+            return f"path_not_found_{resolved_base_path_abs}_{search_subfolders}_{n_images}_{seed}_{sort}_{export_with_alpha}_{filename_optional}"
 
         path_info_part = ""
         if os.path.isfile(resolved_base_path_abs):
@@ -468,9 +480,9 @@ class load_random_image_sokes:
 
                 if search_subfolders:
                     for root, _, files in os.walk(base_dir_for_walk):
-                        for file_name in files:
-                            if file_name.lower().endswith(tuple(img_extensions_lower)):
-                                try: mtimes_list.append(os.path.getmtime(os.path.join(root, file_name)))
+                        for file_name_in_walk in files: # Renamed loop var to avoid shadowing parameter
+                            if file_name_in_walk.lower().endswith(tuple(img_extensions_lower)):
+                                try: mtimes_list.append(os.path.getmtime(os.path.join(root, file_name_in_walk)))
                                 except: pass # Ignore files that disappear or are inaccessible
                 else: # Not searching subfolders
                     for f_name in os.listdir(base_dir_for_walk):
@@ -485,12 +497,12 @@ class load_random_image_sokes:
                 path_info_part = f"dir_content_{base_dir_for_walk}_{dir_content_hash}" # Path is already absolute
             except Exception as e: path_info_part = f"dir_error_{resolved_base_path_abs}_{e}"
         
-        unique_string = f"{path_info_part}_{search_subfolders}_{n_images}_{seed}_{sort}_{export_with_alpha}"
+        unique_string = f"{path_info_part}_{search_subfolders}_{n_images}_{seed}_{sort}_{export_with_alpha}_{file_name}"
         h = hashlib.sha256()
         h.update(unique_string.encode('utf-8'))
         return h.hexdigest()
 
-# END Load Random Image/File with Path and Mask | Sokes 🦬
+# END Load Random Image with Path and Mask | Sokes 🦬
 ##############################################################
 
 
