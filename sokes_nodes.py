@@ -5,6 +5,7 @@ import re
 import random
 import hashlib
 import imghdr
+import glob
 import torch
 import numpy as np
 import cv2 # Not used directly in all snippets, but kept from original for broader context
@@ -235,31 +236,38 @@ class load_random_image_sokes:
     FUNCTION = "load_image_or_file"
     OUTPUT_NODE = True
 
-    def _resolve_path(self, input_path_str: str) -> str:
-        """Helper to resolve input path using folder_paths if available, returns absolute path."""
-        current_check_path = input_path_str
-        if folder_paths:
-            annotated_path = folder_paths.get_annotated_filepath(input_path_str)
-            if annotated_path and os.path.exists(annotated_path):
-                current_check_path = annotated_path
-            elif not os.path.isabs(input_path_str): # If relative and not annotated, try input_dir
-                input_dir = folder_paths.get_input_directory()
-                if input_dir:
-                    path_in_input_dir = os.path.join(input_dir, input_path_str)
-                    if os.path.exists(path_in_input_dir):
-                        current_check_path = path_in_input_dir
-        
-        # At this point, current_check_path is our best guess.
-        # If it exists, return its absolute form.
-        # If it doesn't, but original input_path_str does (e.g. it was absolute), use that.
-        # Otherwise, just return abspath of current_check_path (which might be non-existent but normalized).
-        if os.path.exists(current_check_path):
-            return os.path.abspath(current_check_path)
-        elif os.path.exists(input_path_str): # Fallback for cases like absolute path not found by folder_paths
-             return os.path.abspath(input_path_str)
-        
-        return os.path.abspath(current_check_path) # For non-existent, returns normalized string
+    def _get_all_matching_images(self, folder_path, filename_optional, search_subfolders):
+        """Helper to find all image files based on paths, wildcards, and pipe delimiters."""
+        image_paths_found = set()
+        folder_paths_list = [p.strip() for p in folder_path.split('|')]
 
+        for p in folder_paths_list:
+            if not p and not filename_optional:
+                continue
+
+            pattern = os.path.join(p, filename_optional)
+            try:
+                # Enable recursive globbing with '**', relies on CWD being ComfyUI root
+                glob_matches = glob.glob(pattern, recursive=True)
+            except Exception as e:
+                print(f"sokes_nodes.py: Warning - glob pattern '{pattern}' is invalid: {e}")
+                continue
+
+            for match in glob_matches:
+                abs_match = os.path.abspath(match)
+                if not os.path.exists(abs_match):
+                    continue
+
+                if os.path.isfile(abs_match):
+                    if any(abs_match.lower().endswith(ext) for ext in self.IMG_EXTENSIONS):
+                        image_paths_found.add(os.path.normpath(abs_match))
+                elif os.path.isdir(abs_match):
+                    try:
+                        images_in_dir = self.find_image_files(abs_match, search_subfolders)
+                        image_paths_found.update(images_in_dir)
+                    except Exception as e:
+                        print(f"sokes_nodes.py: Warning - Could not search directory '{abs_match}': {e}")
+        return list(image_paths_found)
 
     def find_image_files(self, folder_path_abs: str, search_subfolders: bool):
         image_paths = []
@@ -320,71 +328,54 @@ class load_random_image_sokes:
             raise RuntimeError(f"Error loading/processing image {os.path.basename(image_path_abs)}: {e}")
 
     def load_image_or_file(self, folder_path, filename_optional, search_subfolders, n_images, seed, sort, export_with_alpha):
+        # Use the helper to get all potential image paths from wildcards and multiple folders
+        image_paths_found_normalized = self._get_all_matching_images(folder_path, filename_optional, search_subfolders)
+
+        # Validate and filter corrupt images from the list
+        valid_image_paths = []
+        for f_path_norm in image_paths_found_normalized:
+            try:
+                is_hdr = imghdr.what(f_path_norm)
+                if is_hdr:
+                    valid_image_paths.append(f_path_norm)
+                    continue
+                else:
+                    with Image.open(f_path_norm) as img_test: img_test.verify()
+                    valid_image_paths.append(f_path_norm)
+            except Exception:
+                if os.path.exists(f_path_norm):
+                    print(f"sokes_nodes.py: Skipping invalid/corrupt file: {os.path.basename(f_path_norm)}")
+        
+        if not valid_image_paths:
+            raise FileNotFoundError(f"No valid images found for folder='{folder_path}' and filename='{filename_optional}'. Check paths, wildcards, and permissions.")
+
+        # Selection logic (random/sorted)
+        num_available = len(valid_image_paths)
+        actual_n_images = min(n_images, num_available) if n_images > 0 else num_available
+        if actual_n_images == 0: raise ValueError("Zero images to load after filtering valid images.")
+        
+        if actual_n_images < n_images and n_images > 0:
+              print(f"sokes_nodes.py: Warning: Requested {n_images} images, but only {num_available} were valid. Loading {actual_n_images}.")
+
         selected_paths_abs = []
-        
-        # Combine folder and file name to get the full path to check
-        input_path = folder_path
-        if filename_optional and filename_optional.strip():
-            # os.path.join correctly handles slashes and platform differences
-            input_path = os.path.join(folder_path, filename_optional)
-        
-        resolved_base_path_abs = self._resolve_path(input_path)
-
-        if not os.path.exists(resolved_base_path_abs): # Check after full resolution attempt
-            raise FileNotFoundError(f"Input path '{input_path}' (resolved to '{resolved_base_path_abs}') does not exist.")
-
-        if os.path.isfile(resolved_base_path_abs):
-            if any(resolved_base_path_abs.lower().endswith(ext) for ext in self.IMG_EXTENSIONS):
-                selected_paths_abs = [resolved_base_path_abs] # Already absolute
-            else:
-                raise ValueError(f"Input file '{os.path.basename(resolved_base_path_abs)}' is not a recognized image type.")
-        elif os.path.isdir(resolved_base_path_abs):
-            image_paths_found_normalized = self.find_image_files(resolved_base_path_abs, search_subfolders) # find_image_files returns normalized paths
-            
-            valid_image_paths = []
-            for f_path_norm in image_paths_found_normalized:
-                try:
-                    is_hdr = imghdr.what(f_path_norm)
-                    if is_hdr:
-                        valid_image_paths.append(f_path_norm)
-                        continue
-                    else:
-                        with Image.open(f_path_norm) as img_test: img_test.verify()
-                        valid_image_paths.append(f_path_norm)
-                except Exception:
-                    if os.path.exists(f_path_norm): # Only print if file still exists (might be a temp file that vanished)
-                        print(f"sokes_nodes.py: Skipping invalid/corrupt file: {os.path.basename(f_path_norm)}")
-            
-            if not valid_image_paths:
-                scope_msg = "and its subfolders" if search_subfolders else "(subfolders not searched)"
-                raise ValueError(f"No valid images found in folder: {resolved_base_path_abs} {scope_msg}")
-
-            num_available = len(valid_image_paths)
-            actual_n_images = min(n_images, num_available) if n_images > 0 else num_available
-            if actual_n_images == 0: raise ValueError("Zero images to load after filtering valid images.")
-            
-            if actual_n_images < n_images and n_images > 0:
-                  print(f"sokes_nodes.py: Warning: Requested {n_images} images, but only {num_available} were valid in '{os.path.basename(resolved_base_path_abs)}'. Loading {actual_n_images}.")
-
-            if not sort:
-                random.seed(seed)
-                random.shuffle(valid_image_paths)
-                selected_paths_abs = valid_image_paths[:actual_n_images]
-            else:
-                def natural_sort_key(s_path):
-                    return [int(text) if text.isdigit() else text.lower() for text in re.split(r'([0-9]+)', os.path.basename(s_path))]
-                valid_image_paths_sorted = sorted(valid_image_paths, key=natural_sort_key)
-                
-                start_python_index = 0
-                if seed > 0 and num_available > 0:
-                    start_python_index = (seed - 1) % num_available
-                
-                selected_paths_abs = [valid_image_paths_sorted[(start_python_index + i) % num_available] for i in range(actual_n_images)]
+        if not sort:
+            random.seed(seed)
+            random.shuffle(valid_image_paths)
+            selected_paths_abs = valid_image_paths[:actual_n_images]
         else:
-            raise FileNotFoundError(f"Input path '{input_path}' (resolved to '{resolved_base_path_abs}') is not a valid file or directory.")
+            def natural_sort_key(s_path):
+                return [int(text) if text.isdigit() else text.lower() for text in re.split(r'([0-9]+)', os.path.basename(s_path))]
+            valid_image_paths_sorted = sorted(valid_image_paths, key=natural_sort_key)
+            
+            start_python_index = 0
+            if seed > 0 and num_available > 0:
+                start_python_index = (seed - 1) % num_available
+            
+            selected_paths_abs = [valid_image_paths_sorted[(start_python_index + i) % num_available] for i in range(actual_n_images)]
 
         if not selected_paths_abs: raise ValueError("No images were selected to load for processing.")
 
+        # Batch loading logic
         output_images_tensor_list, output_masks_tensor_list = [], []
         loaded_paths_final_abs, pil_images_for_preview = [], []
         
@@ -400,8 +391,6 @@ class load_random_image_sokes:
         
         if export_with_alpha and final_image_mode == "RGB" and selected_paths_abs: # Only print if relevant
             print(f"sokes_nodes.py: Note: export_with_alpha=True, but no images with alpha found in selection. Outputting RGB.")
-        # print(f"sokes_nodes.py: Final image processing mode for batch: {final_image_mode}")
-
 
         first_image_shape_hwc = None
         for image_path_abs_current in selected_paths_abs:
@@ -417,7 +406,7 @@ class load_random_image_sokes:
 
                 output_images_tensor_list.append(image_tensor)
                 output_masks_tensor_list.append(mask_tensor)
-                loaded_paths_final_abs.append(image_path_abs_current) # Already absolute and normalized
+                loaded_paths_final_abs.append(image_path_abs_current)
                 pil_images_for_preview.append(loaded_pil_image)
             except Exception as e:
                 print(f"sokes_nodes.py: ❌ Skipping image {os.path.basename(image_path_abs_current)} due to error: {str(e)}")
@@ -454,53 +443,30 @@ class load_random_image_sokes:
 
     @classmethod
     def IS_CHANGED(cls, folder_path, filename_optional, search_subfolders, n_images, seed, sort, export_with_alpha):
-        instance = cls() # Create instance to use _resolve_path
+        instance = cls()
+        try:
+            image_paths = instance._get_all_matching_images(folder_path, filename_optional, search_subfolders)
+        except Exception as e:
+            return f"path_error_{folder_path}_{filename_optional}_{e}"
 
-        input_path = folder_path
-        if filename_optional and filename_optional.strip():
-            input_path = os.path.join(folder_path, filename_optional)
+        if not image_paths:
+            return f"no_files_{folder_path}_{filename_optional}_{search_subfolders}_{n_images}_{seed}_{sort}_{export_with_alpha}"
 
-        resolved_base_path_abs = instance._resolve_path(input_path)
-
-        if not os.path.exists(resolved_base_path_abs):
-            return f"path_not_found_{resolved_base_path_abs}_{search_subfolders}_{n_images}_{seed}_{sort}_{export_with_alpha}_{filename_optional}"
-
-        path_info_part = ""
-        if os.path.isfile(resolved_base_path_abs):
+        mtimes = []
+        for p in image_paths:
             try:
-                mtime = os.path.getmtime(resolved_base_path_abs)
-                fsize = os.path.getsize(resolved_base_path_abs)
-                path_info_part = f"file_{resolved_base_path_abs}_{mtime}_{fsize}" # Path is already absolute
-            except Exception as e: path_info_part = f"file_error_{resolved_base_path_abs}_{e}"
-        elif os.path.isdir(resolved_base_path_abs):
-            mtimes_list = []
-            try:
-                img_extensions_lower = [ext.lower() for ext in cls.IMG_EXTENSIONS]
-                base_dir_for_walk = resolved_base_path_abs # Already absolute
-
-                if search_subfolders:
-                    for root, _, files in os.walk(base_dir_for_walk):
-                        for file_name_in_walk in files: # Renamed loop var to avoid shadowing parameter
-                            if file_name_in_walk.lower().endswith(tuple(img_extensions_lower)):
-                                try: mtimes_list.append(os.path.getmtime(os.path.join(root, file_name_in_walk)))
-                                except: pass # Ignore files that disappear or are inaccessible
-                else: # Not searching subfolders
-                    for f_name in os.listdir(base_dir_for_walk):
-                        full_p = os.path.join(base_dir_for_walk, f_name)
-                        if os.path.isfile(full_p) and f_name.lower().endswith(tuple(img_extensions_lower)):
-                            try: mtimes_list.append(os.path.getmtime(full_p))
-                            except: pass
-                
-                hasher = hashlib.sha256()
-                hasher.update(str(sorted(mtimes_list)).encode('utf-8'))
-                dir_content_hash = hasher.hexdigest()
-                path_info_part = f"dir_content_{base_dir_for_walk}_{dir_content_hash}" # Path is already absolute
-            except Exception as e: path_info_part = f"dir_error_{resolved_base_path_abs}_{e}"
+                mtimes.append(os.path.getmtime(p))
+            except OSError:
+                pass
         
-        unique_string = f"{path_info_part}_{search_subfolders}_{n_images}_{seed}_{sort}_{export_with_alpha}_{file_name}"
-        h = hashlib.sha256()
-        h.update(unique_string.encode('utf-8'))
-        return h.hexdigest()
+        hasher = hashlib.sha256()
+        hasher.update(str(sorted(image_paths)).encode('utf-8'))
+        hasher.update(str(sorted(mtimes)).encode('utf-8'))
+        
+        params_string = f"_{search_subfolders}_{n_images}_{seed}_{sort}_{export_with_alpha}_{filename_optional}"
+        hasher.update(params_string.encode('utf-8'))
+        
+        return hasher.hexdigest()
 
 # END Load Random Image with Path and Mask | Sokes 🦬
 ##############################################################
