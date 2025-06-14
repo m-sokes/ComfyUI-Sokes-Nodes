@@ -7,7 +7,7 @@ A small node suite for ComfyUI featuring the following nodes:
 | **Current Date with Custom Formatting** | Add the current date to the filename. E.g. YYYY-MM-DD |
 | **Empty Latent Selector (9 Inputs)** | Useful for generating a random latent dimentions based on a fixed set |
 | **Replace Text with RegEx** | Useful for using RegEx for text replacement |
-| **Load Random Image** | Load a random image(s) and output optional alpha channel and reference image path(s)<br />Tip: You can use wildcards "*" and "|" in the folder path input |
+| **Load Random Image** | Load a random image(s) and output optional alpha channel and reference image path(s)<br />Tip: You can use wildcards "*" and "\|" in the folder path input |
 | **Hex to Color Name** | Convert hex to descriptive color names for image-generation prompts |
 | **Random Number** | A user friendly random number generator that supports int, float, and bool |
 
