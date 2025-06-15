@@ -245,9 +245,16 @@ class load_random_image_sokes:
         folder_paths_list = [p.strip() for p in path_string.split('|') if p.strip()]
 
         for p in folder_paths_list:
-            if not p and not filename_optional:
+            # UPDATED: First, check if the provided path 'p' is a direct file path.
+            if os.path.isfile(p):
+                # If it's a file, check if it's a supported image type and add it.
+                # This ignores filename_optional for this specific entry.
+                if any(p.lower().endswith(ext) for ext in self.IMG_EXTENSIONS):
+                    image_paths_found.append(os.path.normpath(os.path.abspath(p)))
+                # Then, skip to the next item in the list.
                 continue
 
+            # If 'p' is not a file, treat it as a directory or pattern and combine with filename_optional.
             pattern = os.path.join(p, filename_optional)
             try:
                 glob_matches = glob.glob(pattern, recursive=True)
@@ -392,8 +399,6 @@ class load_random_image_sokes:
         first_image_shape_hwc = None
         warned_about_shapes = set()
         
-        # ** THE FIX IS HERE: **
-        # Iterate over the true, weighted selection. Do NOT de-duplicate it.
         for image_path_abs_current in selected_paths_abs:
             try:
                 image_tensor, mask_tensor, loaded_pil_image = self.validate_and_load_image(image_path_abs_current, final_image_mode)
@@ -429,7 +434,6 @@ class load_random_image_sokes:
 
             for i, pil_img in enumerate(pil_images_for_preview):
                 try:
-                    # Hash the path and index to create a unique name for potentially duplicate images
                     unique_hash = hashlib.sha1(f"{loaded_paths_final_abs[i]}_{i}".encode('utf-8')).hexdigest()[:10]
                     preview_filename = f"preview_{unique_hash}.png"
                     filepath = os.path.join(full_preview_output_folder, preview_filename)
