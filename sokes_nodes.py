@@ -201,6 +201,7 @@ class replace_text_regex_sokes:
 # END Replace Text with Regex | Sokes 🦬
 ##############################################################
 
+
 ##############################################################
 # START Load Random Image with Path and Mask | Sokes 🦬
 
@@ -237,9 +238,11 @@ class load_random_image_sokes:
     OUTPUT_NODE = True
 
     def _get_all_matching_images(self, folder_path, filename_optional, search_subfolders):
-        """Helper to find all image files based on paths, wildcards, and pipe delimiters."""
-        image_paths_found = set()
-        folder_paths_list = [p.strip() for p in folder_path.split('|')]
+        """Helper to find all image files based on paths, wildcards, and pipe/newline delimiters."""
+        image_paths_found = []
+        
+        path_string = folder_path.replace('\n', '|')
+        folder_paths_list = [p.strip() for p in path_string.split('|') if p.strip()]
 
         for p in folder_paths_list:
             if not p and not filename_optional:
@@ -247,7 +250,6 @@ class load_random_image_sokes:
 
             pattern = os.path.join(p, filename_optional)
             try:
-                # Enable recursive globbing with '**', relies on CWD being ComfyUI root
                 glob_matches = glob.glob(pattern, recursive=True)
             except Exception as e:
                 print(f"sokes_nodes.py: Warning - glob pattern '{pattern}' is invalid: {e}")
@@ -260,14 +262,14 @@ class load_random_image_sokes:
 
                 if os.path.isfile(abs_match):
                     if any(abs_match.lower().endswith(ext) for ext in self.IMG_EXTENSIONS):
-                        image_paths_found.add(os.path.normpath(abs_match))
+                        image_paths_found.append(os.path.normpath(abs_match))
                 elif os.path.isdir(abs_match):
                     try:
                         images_in_dir = self.find_image_files(abs_match, search_subfolders)
-                        image_paths_found.update(images_in_dir)
+                        image_paths_found.extend(images_in_dir)
                     except Exception as e:
                         print(f"sokes_nodes.py: Warning - Could not search directory '{abs_match}': {e}")
-        return list(image_paths_found)
+        return image_paths_found
 
     def find_image_files(self, folder_path_abs: str, search_subfolders: bool):
         image_paths = []
@@ -281,7 +283,7 @@ class load_random_image_sokes:
                 for root, _, files in os.walk(folder_path_abs):
                     for file_name_in_walk in files:
                         if file_name_in_walk.lower().endswith(tuple(img_extensions_lower)):
-                           full_path = os.path.join(root, file_name_in_walk) # root from os.walk is already absolute
+                           full_path = os.path.join(root, file_name_in_walk)
                            if os.path.isfile(full_path):
                                image_paths.append(os.path.normpath(full_path))
             else:
@@ -310,8 +312,6 @@ class load_random_image_sokes:
 
             mask_tensor = None
             if img_pil.mode in ('RGBA', 'LA') or (img_pil.mode == 'P' and 'transparency' in img_pil.info):
-                # If exporting RGB but original has alpha, get alpha from original's RGBA conversion
-                # If exporting RGBA, get alpha from the final converted image
                 alpha_source_pil = img_pil.convert('RGBA') if final_image_mode == 'RGB' else converted_image_pil
                 mask_pil_channel = alpha_source_pil.split()[-1]
                 mask_np = np.array(mask_pil_channel).astype(np.float32) / 255.0
@@ -323,86 +323,88 @@ class load_random_image_sokes:
             return image_tensor, mask_tensor, converted_image_pil
         except FileNotFoundError:
             raise FileNotFoundError(f"Image not found: {os.path.basename(image_path_abs)}")
-        except ValueError as ve: raise ve # Re-raise specific validation errors
+        except ValueError as ve: raise ve
         except Exception as e:
             raise RuntimeError(f"Error loading/processing image {os.path.basename(image_path_abs)}: {e}")
 
     def load_image_or_file(self, folder_path, filename_optional, search_subfolders, n_images, seed, sort, export_with_alpha):
-        # Use the helper to get all potential image paths from wildcards and multiple folders
         image_paths_found_normalized = self._get_all_matching_images(folder_path, filename_optional, search_subfolders)
 
-        # Validate and filter corrupt images from the list
-        valid_image_paths = []
-        for f_path_norm in image_paths_found_normalized:
+        unique_paths_for_validation = sorted(list(set(image_paths_found_normalized)))
+        
+        valid_image_paths_set = set()
+        for f_path_norm in unique_paths_for_validation:
             try:
-                is_hdr = imghdr.what(f_path_norm)
-                if is_hdr:
-                    valid_image_paths.append(f_path_norm)
-                    continue
-                else:
-                    with Image.open(f_path_norm) as img_test: img_test.verify()
-                    valid_image_paths.append(f_path_norm)
+                with Image.open(f_path_norm) as img_test: img_test.verify()
+                valid_image_paths_set.add(f_path_norm)
             except Exception:
                 if os.path.exists(f_path_norm):
                     print(f"sokes_nodes.py: Skipping invalid/corrupt file: {os.path.basename(f_path_norm)}")
         
-        if not valid_image_paths:
+        final_selection_pool = [p for p in image_paths_found_normalized if p in valid_image_paths_set]
+        
+        if not final_selection_pool:
             raise FileNotFoundError(f"No valid images found for folder='{folder_path}' and filename='{filename_optional}'. Check paths, wildcards, and permissions.")
 
-        # Selection logic (random/sorted)
-        num_available = len(valid_image_paths)
+        num_available = len(final_selection_pool)
         actual_n_images = min(n_images, num_available) if n_images > 0 else num_available
         if actual_n_images == 0: raise ValueError("Zero images to load after filtering valid images.")
         
         if actual_n_images < n_images and n_images > 0:
-              print(f"sokes_nodes.py: Warning: Requested {n_images} images, but only {num_available} were valid. Loading {actual_n_images}.")
+              print(f"sokes_nodes.py: Warning: Requested {n_images} images, but only {num_available} were in the weighted pool. Loading {actual_n_images}.")
 
         selected_paths_abs = []
         if not sort:
             random.seed(seed)
-            random.shuffle(valid_image_paths)
-            selected_paths_abs = valid_image_paths[:actual_n_images]
+            random.shuffle(final_selection_pool)
+            selected_paths_abs = final_selection_pool[:actual_n_images]
         else:
             def natural_sort_key(s_path):
                 return [int(text) if text.isdigit() else text.lower() for text in re.split(r'([0-9]+)', os.path.basename(s_path))]
-            valid_image_paths_sorted = sorted(valid_image_paths, key=natural_sort_key)
+            
+            final_selection_pool.sort(key=natural_sort_key)
             
             start_python_index = 0
             if seed > 0 and num_available > 0:
                 start_python_index = (seed - 1) % num_available
             
-            selected_paths_abs = [valid_image_paths_sorted[(start_python_index + i) % num_available] for i in range(actual_n_images)]
+            selected_paths_abs = [final_selection_pool[(start_python_index + i) % num_available] for i in range(actual_n_images)]
 
         if not selected_paths_abs: raise ValueError("No images were selected to load for processing.")
 
-        # Batch loading logic
         output_images_tensor_list, output_masks_tensor_list = [], []
         loaded_paths_final_abs, pil_images_for_preview = [], []
         
         final_image_mode = "RGB"
         if export_with_alpha:
-            for image_path_check_abs in selected_paths_abs:
+            paths_to_check = list(set(selected_paths_abs))
+            for image_path_check_abs in paths_to_check:
                 try:
                     with Image.open(image_path_check_abs) as img_pil_check:
                          if img_pil_check.mode in ('RGBA', 'LA') or \
                             (img_pil_check.mode == 'P' and 'transparency' in img_pil_check.info):
                             final_image_mode = "RGBA"; break
-                except: pass # Ignore errors during this pre-check
+                except: pass
         
-        if export_with_alpha and final_image_mode == "RGB" and selected_paths_abs: # Only print if relevant
+        if export_with_alpha and final_image_mode == "RGB" and selected_paths_abs:
             print(f"sokes_nodes.py: Note: export_with_alpha=True, but no images with alpha found in selection. Outputting RGB.")
 
         first_image_shape_hwc = None
+        warned_about_shapes = set()
+        
+        # ** THE FIX IS HERE: **
+        # Iterate over the true, weighted selection. Do NOT de-duplicate it.
         for image_path_abs_current in selected_paths_abs:
             try:
                 image_tensor, mask_tensor, loaded_pil_image = self.validate_and_load_image(image_path_abs_current, final_image_mode)
                 
-                current_shape_hwc = image_tensor.shape[1:4] # H, W, C
+                current_shape_hwc = image_tensor.shape[1:4]
                 if first_image_shape_hwc is None:
                     first_image_shape_hwc = current_shape_hwc
-                elif current_shape_hwc != first_image_shape_hwc and len(selected_paths_abs) > 1:
+                elif current_shape_hwc != first_image_shape_hwc and image_path_abs_current not in warned_about_shapes:
                     print(f"sokes_nodes.py: ⚠️ Warning: Image {os.path.basename(image_path_abs_current)} dims/chans ({current_shape_hwc}) "
                           f"differ from first image ({first_image_shape_hwc}). Batch may be inconsistent.")
+                    warned_about_shapes.add(image_path_abs_current)
 
                 output_images_tensor_list.append(image_tensor)
                 output_masks_tensor_list.append(mask_tensor)
@@ -427,8 +429,9 @@ class load_random_image_sokes:
 
             for i, pil_img in enumerate(pil_images_for_preview):
                 try:
-                    unique_hash = hashlib.sha1(loaded_paths_final_abs[i].encode('utf-8')).hexdigest()[:10]
-                    preview_filename = f"preview_{unique_hash}_{i}.png"
+                    # Hash the path and index to create a unique name for potentially duplicate images
+                    unique_hash = hashlib.sha1(f"{loaded_paths_final_abs[i]}_{i}".encode('utf-8')).hexdigest()[:10]
+                    preview_filename = f"preview_{unique_hash}.png"
                     filepath = os.path.join(full_preview_output_folder, preview_filename)
                     pil_img.save(filepath, compress_level=4)
                     previews_out_list.append({
@@ -453,7 +456,8 @@ class load_random_image_sokes:
             return f"no_files_{folder_path}_{filename_optional}_{search_subfolders}_{n_images}_{seed}_{sort}_{export_with_alpha}"
 
         mtimes = []
-        for p in image_paths:
+        unique_paths = sorted(list(set(image_paths)))
+        for p in unique_paths:
             try:
                 mtimes.append(os.path.getmtime(p))
             except OSError:
