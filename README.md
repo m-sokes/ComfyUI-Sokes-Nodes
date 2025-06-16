@@ -4,7 +4,7 @@ A small node suite for ComfyUI featuring the following nodes:
 
 | Node | Description |
 | --- | --- |
-| **Current Date & Time with Custom Formatting** | Add the current date to the filename. E.g. YYYY-MM-DD<br /><h6>Tip: Also supports python formated date & time properties</h6> |
+| **Current Date & Time** | Add the current date and or time to the filename with custom formatting. E.g. YYYY-MM-DD<br /><h6>Tip: Also supports python formated date & time properties</h6> |
 | **Empty Latent Selector (9 Inputs)** | Useful for generating a random latent dimentions based on a fixed set |
 | **Replace Text with RegEx** | Useful for using RegEx for text replacement |
 | **Load Random Image** | Load a random image(s) and output optional alpha channel and reference image path(s)<br /><h6>Tip: You can use wildcards "*" and or "\|"'s in the folder path input</h6> |
