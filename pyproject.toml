@@ -1,7 +1,7 @@
 [project]
 name = "ComfyUI Sokes Nodes"
 description = "A small node suite for ComfyUI"
-version = "1.0.5"
+version = "1.0.6"
 license = { text = "MIT License" }
 
 [project.urls]
