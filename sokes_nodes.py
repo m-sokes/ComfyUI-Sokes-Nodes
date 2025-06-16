@@ -97,9 +97,9 @@ if PromptServer and comfy_utils_available and nodes_module:
 
 
 ##############################################################
-# START Current Date | Sokes 🦬
+# START Current Date & Time | Sokes 🦬
 
-class current_date_sokes:
+class current_date_time_sokes:
     def __init__(self):
         pass
 
@@ -107,30 +107,53 @@ class current_date_sokes:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "date_format": ("STRING", {"default": 'YYYY-MM-DD', "multiline": False}),
+                "date_time_format": ("STRING", {"default": 'YYYY-MM-DD', "multiline": False}),
             }
         }
     RETURN_TYPES = ("STRING",)
-    RETURN_NAMES = ("formatted_date",)
-    FUNCTION = "current_date_sokes"
+    RETURN_NAMES = ("formatted_date_time",)
+    FUNCTION = "current_date_time_sokes"
     CATEGORY = "Sokes 🦬"
 
-    def current_date_sokes(self, date_format):
-        now = datetime.now()  # Fresh timestamp on every execution
-        formatted = re.sub(r'(?i)(y+|m+|d+)', lambda m: m.group().upper(), date_format)
-        formatted = formatted.replace("YYYY", now.strftime("%Y"))
-        formatted = formatted.replace("YY", now.strftime("%y"))
-        formatted = formatted.replace("MM", now.strftime("%m"))
-        formatted = formatted.replace("M", now.strftime("%m").lstrip("0"))
-        formatted = formatted.replace("DD", now.strftime("%d"))
-        formatted = formatted.replace("D", now.strftime("%d").lstrip("0"))
-        return (formatted,)
+    def current_date_time_sokes(self, date_time_format):
+        now = datetime.now()
+        
+        # Start with the user's original format string.
+        temp_format = date_time_format
+
+        # 1. Translate the non-ambiguous, multi-letter custom codes to Python's strftime codes.
+        # This is the "convert them first" step. We use simple replacement, which is safe for these codes.
+        # The order here doesn't strictly matter, but it's clear.
+        # We use re.sub for case-insensitivity.
+        temp_format = re.sub('YYYY', '%Y', temp_format, flags=re.IGNORECASE)
+        temp_format = re.sub('YY',  '%y', temp_format, flags=re.IGNORECASE)
+        temp_format = re.sub('MM',  '%m', temp_format, flags=re.IGNORECASE)
+        temp_format = re.sub('DD',  '%d', temp_format, flags=re.IGNORECASE)
+
+        # 2. Now, handle the ambiguous single-letter codes.
+        # We replace these directly with their final numeric values. This avoids all conflicts.
+        # The crucial part is the `(?<!%)` negative lookbehind, which ensures we do NOT
+        # touch a letter if it's part of a standard Python code (like the 'M' in '%M').
+        
+        # Replace 'M' (but not '%M') with the numeric month.
+        temp_format = re.sub(r'(?<!%)\bM\b', str(now.month), temp_format, flags=re.IGNORECASE)
+        
+        # Replace 'D' (but not '%D') with the numeric day.
+        temp_format = re.sub(r'(?<!%)\bD\b', str(now.day), temp_format, flags=re.IGNORECASE)
+
+        # 3. The `temp_format` string is now a clean mix of standard %-codes and pre-filled numbers.
+        #    Example: "YYYY-M-DD_%H-%M-%S" has become "%Y-6-%d_%H-%M-%S" (for June).
+        #    We can now safely call strftime once to process the remaining %-codes.
+        final_string = now.strftime(temp_format)
+        
+        return (final_string,)
 
     @classmethod
-    def IS_CHANGED(cls, date_format):
+    def IS_CHANGED(cls, date_time_format):
+        # Always re-run this node to get the current time.
         return (datetime.now().timestamp(),)
 
-# END Current Date | Sokes 🦬
+# END Current Date & Time | Sokes 🦬
 ##############################################################
 
 
@@ -604,7 +627,7 @@ class random_number_sokes:
 # Node Mappings
 
 NODE_CLASS_MAPPINGS = {
-    "Current Date | sokes 🦬": current_date_sokes,
+    "Current Date & Time | sokes 🦬": current_date_time_sokes,
     "Latent Switch x9 | sokes 🦬": latent_input_switch_9x_sokes,
     "Replace Text with RegEx | sokes 🦬": replace_text_regex_sokes,
     "Load Random Image | sokes 🦬": load_random_image_sokes,
@@ -613,7 +636,7 @@ NODE_CLASS_MAPPINGS = {
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "Current Date | sokes 🦬": "Current Date 🦬",
+    "Current Date & Time | sokes 🦬": "Current Date & Time 🦬",
     "Latent Switch x9 | sokes 🦬": "Latent Switch x9 🦬",
     "Replace Text with RegEx | sokes 🦬": "Replace Text with RegEx 🦬",
     "Load Random Image | sokes 🦬": "Load Random Image 🦬",
