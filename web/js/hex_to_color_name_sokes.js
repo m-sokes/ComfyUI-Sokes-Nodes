@@ -4,10 +4,10 @@ app.registerExtension({
     name: "sokes.ColorWidgets",
     async beforeRegisterNodeDef(nodeType, nodeData, app) {
 
-        /**
-         * Node: Hex Color Swatch
-         * Displays multiple, wrapping color swatches from a comma-separated string.
-         */
+        // ###############################################################
+        // START Hex Color Swatch - WEB JAVASCRIPT
+        // Displays multiple, wrapping color swatches from a comma-separated string.
+        //
         if (nodeData.name === "Hex Color Swatch | sokes 🦬") {
 
             // --- Define swatch appearance and layout constants ---
@@ -149,11 +149,102 @@ app.registerExtension({
                 return size;
             };
         }
+        // ###
+        // END Hex Color Swatch - WEB JAVASCRIPT
+        // ###############################################################
 
-        /**
-         * Node: Hex to Color Name
-         * Adds an interactive color picker swatch.
-         */
+        
+        // ###############################################################
+        // START Random Hex Color - WEB JAVASCRIPT
+        // Adds an interactive color picker swatch to display the first generated color.
+        //
+        if (nodeData.name === "Random Hex Color | sokes 🦬") {
+            const onNodeCreated = nodeType.prototype.onNodeCreated;
+            nodeType.prototype.onNodeCreated = function () {
+                onNodeCreated?.apply(this, arguments);
+
+                // This node doesn't have a text input widget, so we create one.
+                // This widget will be updated by the color picker and the backend.
+                //const hexWidget = this.addWidget("text", "hex_override", "#000000", (value) => {});
+                //hexWidget.serialize = false; // Don't save this temporary value in the workflow
+
+                // --- Create Swatch Elements (same as Hex to Color Name) ---
+                const swatch = document.createElement("div");
+                Object.assign(swatch.style, {
+                    width: "100%",
+                    height: "20px",
+                    borderRadius: "4px",
+                    //border: "1px solid #222",
+                    cursor: "pointer",
+                    boxSizing: "border-box",
+                });
+                
+                const colorInput = document.createElement("input");
+                colorInput.type = "color";
+                swatch.addEventListener("click", () => colorInput.click());
+
+                // Function to sync the swatch and hidden color picker
+                const syncSwatch = (value) => {
+                     // Get the first color if it's a list
+                    const firstHex = (value.split(',')[0] || "").trim().toUpperCase();
+                    if (/^#([0-9A-F]{3}){1,2}$/.test(firstHex)) {
+                        swatch.style.backgroundColor = firstHex;
+                        colorInput.value = firstHex;
+                    } else {
+                        swatch.style.backgroundColor = "#000000";
+                    }
+                };
+
+                // When the user picks a color, update our text widget
+                colorInput.addEventListener("input", (e) => {
+                    const newColor = e.target.value.toUpperCase();
+                    //hexWidget.value = newColor;
+                    syncSwatch(newColor);
+                });
+
+                // When the user types, update the swatch
+                //hexWidget.callback = (value) => {
+                //    syncSwatch(value);
+                //};
+
+                // Add the swatch to the node
+                this.addDOMWidget("random_color_picker", "div", swatch, { serialize: false });
+                
+                // Hook into onExecuted to get the generated color from Python
+                const onExecuted = this.onExecuted;
+                this.onExecuted = function(message) {
+                    onExecuted?.apply(this, arguments);
+                    
+                    // Key "hex_color_string" matches the Python RETURN_NAMES
+                    if (message?.hex_color_string && message.hex_color_string.length > 0) {
+                        const generatedString = message.hex_color_string[0];
+                        //hexWidget.value = generatedString; // Update the text widget
+                        syncSwatch(generatedString);       // Update the swatch with the new value
+                    }
+                };
+                 // Set initial state
+                //setTimeout(() => syncSwatch(hexWidget.value), 0);
+            };
+
+            // Ensure the node has enough height for the new widgets
+            const onComputeSize = nodeType.prototype.computeSize;
+            nodeType.prototype.computeSize = function(out) {
+                const size = onComputeSize.apply(this, arguments);
+                if (size) {
+                    size[1] = Math.max(size[1], 100);
+                }
+                return size;
+            };
+        }
+        // ###
+        // END Random Hex Color - WEB JAVASCRIPT
+        // ###############################################################
+
+
+        // ###############################################################
+        // START Hex to Color Name - WEB JAVASCRIPT
+        // Adds an interactive color picker swatch.
+        //
         if (nodeData.name === "Hex to Color Name | sokes 🦬") {
             const onNodeCreated = nodeType.prototype.onNodeCreated;
             nodeType.prototype.onNodeCreated = function () {
@@ -168,7 +259,7 @@ app.registerExtension({
                     width: "100%",
                     height: "20px",
                     borderRadius: "4px",
-                    border: "1px solid #222",
+                    //border: "1px solid #222",
                     cursor: "pointer",
                     boxSizing: "border-box",
                 });
@@ -194,30 +285,28 @@ app.registerExtension({
 
                 // Function to sync swatch color from the text widget
                 const syncSwatchFromWidget = (value) => {
-                    if (/^#([0-9A-Fa-f]{3}){1,2}$/.test(value)) {
-                        swatch.style.backgroundColor = value;
-                        colorInput.value = value;
+                    let cleanValue = (value || "").toUpperCase();
+                    if (!cleanValue.startsWith("#")) cleanValue = "#" + cleanValue;
+
+                    if (/^#([0-9A-Fa-f]{3}){1,2}$/.test(cleanValue)) {
+                        swatch.style.backgroundColor = cleanValue;
+                        colorInput.value = cleanValue;
                     }
                 };
-                
-                // *** ADDED THIS BLOCK TO SYNC FROM BACKEND ***
-                // Hook into onExecuted to get updates from the Python backend
-                const onExecuted = this.onExecuted;
-                this.onExecuted = function(message) {
-                    onExecuted?.apply(this, arguments); // Call original if it exists
-                    
+
+                // *** FIX: Re-added the onExecuted hook to sync from the backend ***
+                this.onExecuted = (message) => {
                     if (message?.hex_color && message.hex_color.length > 0) {
                         const validatedHex = message.hex_color[0].toUpperCase();
                         if (hexWidget) {
                             hexWidget.value = validatedHex;
-                            syncSwatchFromWidget(validatedHex); // This function already updates the swatch!
+                            syncSwatchFromWidget(validatedHex);
                         }
                     }
                 };
-                // ************************************************
                 
                 if (hexWidget) {
-                    // Hijack the original callback to sync our swatch on manual typing
+                    // Hijack the original callback to sync our swatch
                     const originalCallback = hexWidget.callback;
                     hexWidget.callback = (value) => {
                         syncSwatchFromWidget(value);
@@ -233,5 +322,8 @@ app.registerExtension({
                 }
             };
         }
+        // ###
+        // END Hex Color to Name - WEB JAVASCRIPT
+        // ###############################################################
     },
 });
