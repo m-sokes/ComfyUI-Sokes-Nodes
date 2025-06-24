@@ -1,2 +1,6 @@
 webcolors
 colormath
+Pillow
+opencv-python
+numpy
+math
