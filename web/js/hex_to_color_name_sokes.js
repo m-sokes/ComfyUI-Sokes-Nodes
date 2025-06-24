@@ -30,9 +30,9 @@ app.registerExtension({
                 // Draw the swatch background
                 ctx.fillStyle = color;
                 ctx.fillRect(x, y, SWATCH_WIDTH, SWATCH_HEIGHT);
-                ctx.strokeStyle = "#000000";
-                ctx.lineWidth = 1;
-                ctx.strokeRect(x, y, SWATCH_WIDTH, SWATCH_HEIGHT);
+                //ctx.strokeStyle = "#000000";
+                //ctx.lineWidth = 1;
+                //ctx.strokeRect(x, y, SWATCH_WIDTH, SWATCH_HEIGHT);
 
                 // Draw the text label
                 try {
@@ -154,63 +154,87 @@ app.registerExtension({
         // ###############################################################
 
         
-        // ###############################################################
+                // ###############################################################
         // START Random Hex Color - WEB JAVASCRIPT
-        // Adds an interactive color picker swatch to display the first generated color.
+        // Adds an interactive color picker swatch for a single color,
+        // or a multi-color swatch display for multiple colors.
         //
         if (nodeData.name === "Random Hex Color | sokes 🦬") {
             const onNodeCreated = nodeType.prototype.onNodeCreated;
             nodeType.prototype.onNodeCreated = function () {
                 onNodeCreated?.apply(this, arguments);
 
-                // This node doesn't have a text input widget, so we create one.
-                // This widget will be updated by the color picker and the backend.
-                //const hexWidget = this.addWidget("text", "hex_override", "#000000", (value) => {});
-                //hexWidget.serialize = false; // Don't save this temporary value in the workflow
-
-                // --- Create Swatch Elements (same as Hex to Color Name) ---
-                const swatch = document.createElement("div");
-                Object.assign(swatch.style, {
+                // --- Create the main container for the swatches ---
+                const swatchContainer = document.createElement("div");
+                Object.assign(swatchContainer.style, {
                     width: "100%",
                     height: "20px",
                     borderRadius: "4px",
-                    //border: "1px solid #222",
-                    cursor: "pointer",
+                    //border: "1px solid #222", // A subtle border for definition
                     boxSizing: "border-box",
+                    display: "flex", // Use flexbox for layout
+                    //gap: "1px", // The 1px gap between colors
+                    overflow: "hidden", // This is key for the rounded corners on the children
+                    cursor: "pointer", // Default to pointer, will be changed if > 1 color
                 });
                 
+                // Create the hidden color input for the picker (only used for a single color)
                 const colorInput = document.createElement("input");
                 colorInput.type = "color";
-                swatch.addEventListener("click", () => colorInput.click());
+                
+                // Click handler for the container
+                const onSwatchClick = () => colorInput.click();
+                swatchContainer.addEventListener("click", onSwatchClick);
 
-                // Function to sync the swatch and hidden color picker
-                const syncSwatch = (value) => {
-                     // Get the first color if it's a list
-                    const firstHex = (value.split(',')[0] || "").trim().toUpperCase();
-                    if (/^#([0-9A-F]{3}){1,2}$/.test(firstHex)) {
-                        swatch.style.backgroundColor = firstHex;
+                // Function to update the display based on the hex string
+                const updateDisplay = (hexString) => {
+                    const hexes = (hexString || "").split(',')
+                        .map(c => c.trim().toUpperCase())
+                        .filter(c => /^#([0-9A-F]{3}){1,2}$/.test(c));
+
+                    // Clear previous swatches
+                    swatchContainer.innerHTML = "";
+
+                    if (hexes.length <= 1) {
+                        // --- SINGLE COLOR OR EMPTY ---
+                        const firstHex = hexes[0] || "#000000";
+                        swatchContainer.style.backgroundColor = firstHex;
+                        swatchContainer.style.cursor = "pointer";
+                        swatchContainer.addEventListener("click", onSwatchClick); // Ensure listener is attached
+                        
+                        // Sync the hidden color picker
                         colorInput.value = firstHex;
+
                     } else {
-                        swatch.style.backgroundColor = "#000000";
+                        // --- MULTIPLE COLORS ---
+                        swatchContainer.style.backgroundColor = "transparent"; // Let node background show in gaps
+                        swatchContainer.style.cursor = "default";
+                        swatchContainer.removeEventListener("click", onSwatchClick); // Disable picker for multiple colors
+
+                        hexes.forEach(hex => {
+                            const block = document.createElement("div");
+                            Object.assign(block.style, {
+                                flex: "1", // Each block takes up equal space
+                                height: "100%",
+                                backgroundColor: hex,
+                            });
+                            swatchContainer.appendChild(block);
+                        });
                     }
                 };
 
-                // When the user picks a color, update our text widget
+                // When the user picks a color, it should ONLY update if there's one color displayed
                 colorInput.addEventListener("input", (e) => {
+                    // This interaction is only meaningful if we are in single-color mode.
+                    // When a color is picked, it replaces whatever was in the output.
                     const newColor = e.target.value.toUpperCase();
-                    //hexWidget.value = newColor;
-                    syncSwatch(newColor);
+                    updateDisplay(newColor);
                 });
 
-                // When the user types, update the swatch
-                //hexWidget.callback = (value) => {
-                //    syncSwatch(value);
-                //};
-
-                // Add the swatch to the node
-                this.addDOMWidget("random_color_picker", "div", swatch, { serialize: false });
+                // Add the swatch container to the node
+                this.addDOMWidget("random_color_display", "div", swatchContainer, { serialize: false });
                 
-                // Hook into onExecuted to get the generated color from Python
+                // Hook into onExecuted to get the generated color(s) from Python
                 const onExecuted = this.onExecuted;
                 this.onExecuted = function(message) {
                     onExecuted?.apply(this, arguments);
@@ -218,15 +242,12 @@ app.registerExtension({
                     // Key "hex_color_string" matches the Python RETURN_NAMES
                     if (message?.hex_color_string && message.hex_color_string.length > 0) {
                         const generatedString = message.hex_color_string[0];
-                        //hexWidget.value = generatedString; // Update the text widget
-                        syncSwatch(generatedString);       // Update the swatch with the new value
+                        updateDisplay(generatedString); // Update the display with the new value(s)
                     }
                 };
-                 // Set initial state
-                //setTimeout(() => syncSwatch(hexWidget.value), 0);
             };
 
-            // Ensure the node has enough height for the new widgets
+            // Ensure the node has enough height for the widgets
             const onComputeSize = nodeType.prototype.computeSize;
             nodeType.prototype.computeSize = function(out) {
                 const size = onComputeSize.apply(this, arguments);
@@ -241,7 +262,7 @@ app.registerExtension({
         // ###############################################################
 
 
-        // ###############################################################
+                // ###############################################################
         // START Hex to Color Name - WEB JAVASCRIPT
         // Adds an interactive color picker swatch.
         //
@@ -259,7 +280,7 @@ app.registerExtension({
                     width: "100%",
                     height: "20px",
                     borderRadius: "4px",
-                    //border: "1px solid #222",
+                    border: "1px solid #222",
                     cursor: "pointer",
                     boxSizing: "border-box",
                 });
@@ -271,7 +292,7 @@ app.registerExtension({
                 // When swatch is clicked, trigger the hidden color input
                 swatch.addEventListener("click", () => colorInput.click());
 
-                // When a new color is selected from the picker
+                // When a new color is selected from the picker, it REPLACES the text input
                 colorInput.addEventListener("input", (e) => {
                     const newColor = e.target.value.toUpperCase();
                     if (hexWidget) {
@@ -283,30 +304,44 @@ app.registerExtension({
                     }
                 });
 
-                // Function to sync swatch color from the text widget
+                // Function to sync swatch color from the text widget.
+                // It now takes the first color from a comma-separated list.
                 const syncSwatchFromWidget = (value) => {
-                    let cleanValue = (value || "").toUpperCase();
-                    if (!cleanValue.startsWith("#")) cleanValue = "#" + cleanValue;
+                    // Take the first item from a potential comma-separated list
+                    let firstHex = (value || "").split(',')[0].trim().toUpperCase();
+                    if (!firstHex) {
+                        swatch.style.backgroundColor = "#000000"; // Default for empty
+                        return;
+                    }
 
-                    if (/^#([0-9A-Fa-f]{3}){1,2}$/.test(cleanValue)) {
-                        swatch.style.backgroundColor = cleanValue;
-                        colorInput.value = cleanValue;
+                    if (!firstHex.startsWith("#")) firstHex = "#" + firstHex;
+
+                    // Validate the extracted hex code before applying
+                    if (/^#([0-9A-Fa-f]{3}){1,2}$/.test(firstHex)) {
+                        swatch.style.backgroundColor = firstHex;
+                        // Also update the hidden color picker's value to match
+                        colorInput.value = firstHex.length === 4 ? `#${firstHex[1]}${firstHex[1]}${firstHex[2]}${firstHex[2]}${firstHex[3]}${firstHex[3]}` : firstHex;
+                    } else {
+                        swatch.style.backgroundColor = "#000000"; // Default for invalid
                     }
                 };
 
-                // *** FIX: Re-added the onExecuted hook to sync from the backend ***
+                // Hook into onExecuted to get validated hexes from the backend
                 this.onExecuted = (message) => {
-                    if (message?.hex_color && message.hex_color.length > 0) {
-                        const validatedHex = message.hex_color[0].toUpperCase();
+                    // The backend now sends an array of validated hex strings
+                    if (message?.hex_color) {
+                        const validatedHexes = message.hex_color;
                         if (hexWidget) {
-                            hexWidget.value = validatedHex;
-                            syncSwatchFromWidget(validatedHex);
+                            // Update the text widget with the full, cleaned, comma-separated string
+                            hexWidget.value = validatedHexes.join(", ");
+                            // Update the swatch to show the first color from the list
+                            syncSwatchFromWidget(hexWidget.value);
                         }
                     }
                 };
                 
                 if (hexWidget) {
-                    // Hijack the original callback to sync our swatch
+                    // Hijack the original callback to sync our swatch whenever the user types
                     const originalCallback = hexWidget.callback;
                     hexWidget.callback = (value) => {
                         syncSwatchFromWidget(value);
@@ -317,7 +352,7 @@ app.registerExtension({
                     const widget = this.addDOMWidget("color_picker", "div", swatch);
                     widget.serialize = false; // Don't save this widget's value
 
-                    // Initial sync
+                    // Initial sync on node creation
                     setTimeout(() => syncSwatchFromWidget(hexWidget.value), 0);
                 }
             };
