@@ -1,125 +1,237 @@
-// web/js/hex_to_color_name_sokes.js
 import { app } from "../../scripts/app.js";
- 
-const LOG_PREFIX = "[hex_color] V25_WIDTH_FIX: ";
-const SWATCH_SIZE = 48; // px
-const SWATCH_MARGIN = 5; // px
-const DEFAULT_WIDGET_HEIGHT = 250; // was 50
-const MIN_NODE_WIDTH_PADDING = 50; // Extra padding for node width
- 
-console.log(LOG_PREFIX + "🦬 sokes.hexToColorNameUI loaded ✅");
- 
-// Helper to update swatch color (no changes needed)
-function updateSwatchColor(swatchElement, hexColorString) { /* ... same as before ... */
-     if (!swatchElement) return;
-     let colorValue = hexColorString || "#FFFFFF"; if (typeof colorValue === 'string' && !colorValue.startsWith("#")) colorValue = "#" + colorValue;
-     if (typeof colorValue === 'string' && /^#([0-9A-Fa-f]{3}){1,2}$/.test(colorValue)) { swatchElement.style.backgroundColor = colorValue; swatchElement.style.border = "1px solid var(--input-text, #888)"; }
-     else { swatchElement.style.backgroundColor = "transparent"; swatchElement.style.border = "1px dashed red"; }
-}
- 
- 
+
 app.registerExtension({
-    name: "sokes.hexToColorNameUI.V25WidthFix",
-    async beforeRegisterNodeDef(nodeType, nodeData, appInstance) {
+    name: "sokes.ColorWidgets",
+    async beforeRegisterNodeDef(nodeType, nodeData, app) {
+
+        /**
+         * Node: Hex Color Swatch
+         * Displays multiple, wrapping color swatches from a comma-separated string.
+         */
+        if (nodeData.name === "Hex Color Swatch | sokes 🦬") {
+
+            // --- Define swatch appearance and layout constants ---
+            const SWATCH_WIDTH = 80;
+            const SWATCH_HEIGHT = 32;
+            const GAP = 4;
+            const MARGIN = 10;
+            const START_Y = 50; // Vertical start position for the swatches grid
+
+            /**
+             * Draws a single swatch with a text label at a specific x,y coordinate.
+             * @param {CanvasRenderingContext2D} ctx The canvas context.
+             * @param {string} hex The hex color string.
+             * @param {number} x The x coordinate to start drawing.
+             * @param {number} y The y coordinate to start drawing.
+             */
+            const drawSwatch = (ctx, hex, x, y) => {
+                let color = /^#([0-9A-F]{3}){1,2}$/.test(hex) ? hex : "#000000";
+
+                // Draw the swatch background
+                ctx.fillStyle = color;
+                ctx.fillRect(x, y, SWATCH_WIDTH, SWATCH_HEIGHT);
+                ctx.strokeStyle = "#000000";
+                ctx.lineWidth = 1;
+                ctx.strokeRect(x, y, SWATCH_WIDTH, SWATCH_HEIGHT);
+
+                // Draw the text label
+                try {
+                    const rgb = parseInt(color.slice(1), 16);
+                    const luma = 0.2126 * ((rgb >> 16) & 0xff) + 0.7156 * ((rgb >> 8) & 0xff) + 0.0722 * (rgb & 0xff);
+                    ctx.fillStyle = luma < 128 ? "white" : "black";
+                } catch (e) {
+                    ctx.fillStyle = "white";
+                }
+
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.font = "bold 14px sans-serif";
+                ctx.fillText(hex, x + SWATCH_WIDTH / 2, y + SWATCH_HEIGHT / 2);
+            };
+
+            const onNodeCreated = nodeType.prototype.onNodeCreated;
+            nodeType.prototype.onNodeCreated = function () {
+                onNodeCreated?.apply(this, arguments);
+
+                // This widget stores the array of hex values. It has no visible element.
+                const internalWidget = this.addCustomWidget({
+                    name: "swatch_values_widget",
+                    type: "customtext",
+                    value: [], // Will hold an array of hex strings
+                    draw: () => {},
+                });
+
+                const hexInputWidget = this.widgets.find(w => w.name === "hex");
+
+                // Function to parse the text input and update the internal values
+                const updateValues = (text) => {
+                    const hexes = (text || "").split(',')
+                        .map(c => c.trim().toUpperCase())
+                        .filter(Boolean);
+                    internalWidget.value = hexes;
+                    this.setDirtyCanvas(true, true); // Force redraw and resize
+                };
+
+                // Hook into onExecuted to get updates from the Python backend
+                this.onExecuted = (message) => {
+                    if (message?.hex) {
+                        const validatedHexes = message.hex || [];
+                        internalWidget.value = validatedHexes;
+                        
+                        // *** ADDED THIS BLOCK TO UPDATE THE TEXT INPUT ***
+                        const hexInputWidget = this.widgets.find(w => w.name === "hex");
+                        if (hexInputWidget) {
+                            // Convert the validated array back into a clean string and update the widget
+                            hexInputWidget.value = validatedHexes.join(", ");
+                        }
+                        // ************************************************
+
+                        this.setDirtyCanvas(true, true);
+                    }
+                };
+
+                // Hijack the text input's callback to update on user input
+                if (hexInputWidget) {
+                    const originalCallback = hexInputWidget.callback;
+                    hexInputWidget.callback = (value) => {
+                        updateValues(value);
+                        return originalCallback?.apply(this, arguments);
+                    };
+                    // Initial parse on node creation
+                    setTimeout(() => updateValues(hexInputWidget.value), 0);
+                }
+            };
+
+            // Use onDrawForeground to draw all the swatches in a grid
+            const onDrawForeground = nodeType.prototype.onDrawForeground;
+            nodeType.prototype.onDrawForeground = function(ctx) {
+                onDrawForeground?.apply(this, arguments);
+
+                const widget = this.widgets.find((w) => w.name === "swatch_values_widget");
+                const hexValues = widget?.value;
+
+                if (!hexValues || hexValues.length === 0 || this.flags.collapsed) {
+                    return;
+                }
+
+                const availableWidth = this.size[0] - (2 * MARGIN);
+                const swatchesPerRow = Math.max(1, Math.floor(availableWidth / (SWATCH_WIDTH + GAP)));
+
+                hexValues.forEach((hex, index) => {
+                    const row = Math.floor(index / swatchesPerRow);
+                    const col = index % swatchesPerRow;
+                    const x = MARGIN + col * (SWATCH_WIDTH + GAP);
+                    const y = START_Y + row * (SWATCH_HEIGHT + GAP);
+                    drawSwatch(ctx, hex, x, y);
+                });
+            };
+
+            // Dynamically compute the node's height based on how many rows of swatches are needed
+            const onComputeSize = nodeType.prototype.computeSize;
+            nodeType.prototype.computeSize = function(out) {
+                const size = onComputeSize.apply(this, arguments);
+                const hexValues = this.widgets.find(w => w.name === "swatch_values_widget")?.value || [];
+
+                if (hexValues.length === 0) {
+                    return size;
+                }
+                
+                size[0] = Math.max(size[0], 240); // Ensure a minimum width
+
+                const availableWidth = size[0] - (2 * MARGIN);
+                const swatchesPerRow = Math.max(1, Math.floor(availableWidth / (SWATCH_WIDTH + GAP)));
+                const numRows = Math.ceil(hexValues.length / swatchesPerRow);
+                
+                const swatchesTotalHeight = (numRows * SWATCH_HEIGHT) + (Math.max(0, numRows - 1) * GAP);
+                const requiredHeight = START_Y + swatchesTotalHeight + MARGIN;
+                
+                size[1] = Math.max(size[1], requiredHeight);
+                return size;
+            };
+        }
+
+        /**
+         * Node: Hex to Color Name
+         * Adds an interactive color picker swatch.
+         */
         if (nodeData.name === "Hex to Color Name | sokes 🦬") {
-            // console.log(`${LOG_PREFIX}Target node found. Applying hook.`);
- 
-            const original_onNodeCreated = nodeType.prototype.onNodeCreated;
-            nodeType.prototype.onNodeCreated = function() {
-                const nodeObject = this;
-                // console.log(`%c${LOG_PREFIX}onNodeCreated for Node ID: ${nodeObject.id}`, "color: lime;");
- 
-                let result; if (original_onNodeCreated) { try { result = original_onNodeCreated.apply(this, arguments); } catch(e) { console.error(`${LOG_PREFIX}Err in orig onNodeCreated:`, e); } }
- 
-                setTimeout(() => {
-                    // console.log(`${LOG_PREFIX} (Delayed) Setting up node ${nodeObject.id}`);
-                    const hexWidget = nodeObject.widgets?.find(w => w.name === "hex_color");
-                    const friendlyWidget = nodeObject.widgets?.find(w => w.name === "friendly_names");
- 
-                    if (!hexWidget) { console.error(`${LOG_PREFIX}hex_color widget not found!`); return; }
-                    if (!friendlyWidget) { console.warn(`${LOG_PREFIX}friendly_names widget not found! Swatch position may be incorrect.`); }
- 
-                    nodeObject.sokes_hex_widget_ref = hexWidget;
- 
-                    let swatchWidget = nodeObject.widgets?.find(w => w.name === "hex_color_swatch");
-                    let swatchElement = swatchWidget?.element || nodeObject.sokes_swatch_element_ref;
- 
-                    let widgetAddedNow = false; // Flag if we add the widget in this run
- 
-                    if (!swatchWidget) {
-                        // console.log(`${LOG_PREFIX}Creating swatch DOM element.`);
-                        swatchElement = document.createElement("div");
-                        swatchElement.className = "sokes-color-swatch-dom";
-                        // Apply styles that DON'T directly affect layout yet (like margin)
-                         Object.assign(swatchElement.style, { width: `${SWATCH_SIZE}px`, height: `${SWATCH_SIZE}px`, border: "1px solid var(--input-text, #CCC)", borderRadius: "2px", display: "inline-block", cursor: "pointer", verticalAlign: "middle", boxSizing:"border-box" });
-                        // Note: marginLeft removed for now, will be applied AFTER node resize
- 
-                        let targetY = hexWidget.last_y + DEFAULT_WIDGET_HEIGHT + 4;
-                        if (friendlyWidget?.last_y) { targetY = friendlyWidget.last_y + (friendlyWidget.computedHeight || DEFAULT_WIDGET_HEIGHT) + 4; }
-                        const options = { y: targetY };
- 
-                        // console.log(`${LOG_PREFIX}Adding DOM widget...`);
-                        try {
-                            swatchWidget = nodeObject.addDOMWidget("hex_color_swatch", "div", swatchElement, options);
-                            if (!swatchWidget) throw new Error("addDOMWidget failed.");
-                            nodeObject.sokes_swatch_element_ref = swatchElement;
-                            widgetAddedNow = true; // Mark that we added it
- 
-                        } catch (e) { console.error(`${LOG_PREFIX}Error adding DOM widget:`, e); return; }
-                        // console.log(`${LOG_PREFIX}DOM Widget added.`);
-                    } else if (swatchElement) {
-                         nodeObject.sokes_swatch_element_ref = swatchElement;
+            const onNodeCreated = nodeType.prototype.onNodeCreated;
+            nodeType.prototype.onNodeCreated = function () {
+                onNodeCreated?.apply(this, arguments);
+
+                const hexWidget = this.widgets.find(w => w.name === "hex_color");
+                
+                // Create the visible swatch div
+                const swatch = document.createElement("div");
+                swatch.className = "sokes-color-picker-swatch";
+                Object.assign(swatch.style, {
+                    width: "100%",
+                    height: "20px",
+                    borderRadius: "4px",
+                    border: "1px solid #222",
+                    cursor: "pointer",
+                    boxSizing: "border-box",
+                });
+                
+                // Create the hidden color input
+                const colorInput = document.createElement("input");
+                colorInput.type = "color";
+                
+                // When swatch is clicked, trigger the hidden color input
+                swatch.addEventListener("click", () => colorInput.click());
+
+                // When a new color is selected from the picker
+                colorInput.addEventListener("input", (e) => {
+                    const newColor = e.target.value.toUpperCase();
+                    if (hexWidget) {
+                        hexWidget.value = newColor; // Update the node's text input
+                        swatch.style.backgroundColor = newColor; // Update the swatch itself
+                        if (hexWidget.callback) {
+                             hexWidget.callback(newColor);
+                        }
                     }
- 
-                    if (!nodeObject.sokes_swatch_element_ref) { console.error("Swatch element ref missing!"); return; }
- 
- 
-                    // --- Force Node Resize (if widget was added now or size seems wrong) ---
-                    // Estimate minimum width needed for the hex widget + swatch + margins
-                    // LiteGraph minimum node width is often around 150-200
-                    const baseWidth = Math.max(150, hexWidget.computedWidth || 150); // Guess width of text input
-                    const requiredWidth = baseWidth + SWATCH_MARGIN + SWATCH_SIZE + MIN_NODE_WIDTH_PADDING;
- 
-                    // Only resize if needed and preferably only once right after adding
-                    if (widgetAddedNow || (nodeObject.size && nodeObject.size[0] < requiredWidth)) {
-                         console.log(`${LOG_PREFIX}Adjusting node width. Current: ${nodeObject.size?.[0]}, Required Min: ${requiredWidth}`);
-                         // Ensure node has a size property before trying to set it
-                         if(!nodeObject.size) nodeObject.size = [0,0];
-                         nodeObject.size[0] = Math.max(nodeObject.size[0] || 0, requiredWidth); // Set width, ensure it doesn't shrink
-                         nodeObject.computeSize(); // Recalculate layout with new minimum width
-                         console.log(`${LOG_PREFIX}Node size after computeSize:`, nodeObject.size);
+                });
+
+                // Function to sync swatch color from the text widget
+                const syncSwatchFromWidget = (value) => {
+                    if (/^#([0-9A-Fa-f]{3}){1,2}$/.test(value)) {
+                        swatch.style.backgroundColor = value;
+                        colorInput.value = value;
                     }
- 
-                    // --- Apply Margin AFTER potential resize ---
-                    // This ensures the margin doesn't cause initial calculation issues
-                    if (nodeObject.sokes_swatch_element_ref) {
-                        nodeObject.sokes_swatch_element_ref.style.marginLeft = `${SWATCH_MARGIN}px`;
+                };
+                
+                // *** ADDED THIS BLOCK TO SYNC FROM BACKEND ***
+                // Hook into onExecuted to get updates from the Python backend
+                const onExecuted = this.onExecuted;
+                this.onExecuted = function(message) {
+                    onExecuted?.apply(this, arguments); // Call original if it exists
+                    
+                    if (message?.hex_color && message.hex_color.length > 0) {
+                        const validatedHex = message.hex_color[0].toUpperCase();
+                        if (hexWidget) {
+                            hexWidget.value = validatedHex;
+                            syncSwatchFromWidget(validatedHex); // This function already updates the swatch!
+                        }
                     }
-                    // ---
- 
- 
-                    // Update color initially
-                    updateSwatchColor(nodeObject.sokes_swatch_element_ref, hexWidget.value);
- 
-                    // --- Hijack Callback ---
-                    if (hexWidget && !hexWidget.sokes_callback_hijacked) {
-                        // ... (Callback hijacking logic - same as before) ...
-                        const originalCallback = hexWidget.callback; const currentNodeObject = nodeObject; hexWidget.callback = function(value, ...args) { if (originalCallback) { try { originalCallback.apply(this, arguments); } catch (e) {} } if (currentNodeObject.sokes_swatch_element_ref) { updateSwatchColor(currentNodeObject.sokes_swatch_element_ref, value); } }; hexWidget.sokes_callback_hijacked = true;
-                    }
- 
-                    // --- Add Click Listener ---
-                     const currentSwatchElement = nodeObject.sokes_swatch_element_ref;
-                     if (currentSwatchElement && !currentSwatchElement.sokes_click_listener_added) {
-                         // ... (Click listener logic - same as before) ...
-                         const currentNodeObjectForClick = nodeObject; currentSwatchElement.addEventListener("click", () => { const linkedHexWidget = currentNodeObjectForClick.sokes_hex_widget_ref; if (!linkedHexWidget) return; const picker = document.createElement("input"); picker.type = "color"; let currentColor = linkedHexWidget.value || "#FFFFFF"; if (!currentColor.startsWith("#")) currentColor = "#" + currentColor; if (/^#([0-9A-Fa-f]{6})$/.test(currentColor)) picker.value = currentColor; else if (/^#([0-9A-Fa-f]{3})$/.test(currentColor)) picker.value = `#${currentColor[1]}${currentColor[1]}${currentColor[2]}${currentColor[2]}${currentColor[3]}${currentColor[3]}`; else picker.value = "#ffffff"; picker.style.position = "fixed"; picker.style.top = "-100px"; picker.style.left = "-100px"; document.body.appendChild(picker); setTimeout(() => { try { picker.click(); } catch(err) {}}, 10); const onChange = () => { const newHex = "#" + picker.value.substring(1).toUpperCase(); if (linkedHexWidget.value !== newHex) { linkedHexWidget.value = newHex; if (linkedHexWidget.callback) { try { linkedHexWidget.callback(newHex); } catch(cbErr){}} currentNodeObjectForClick.setDirtyCanvas(true,true); } }; const removePickerFunc = () => { if (document.body.contains(picker)) document.body.removeChild(picker); picker.removeEventListener("change", onChange); picker.removeEventListener("input", onChange); picker.removeEventListener("blur", delayedRemovePickerFunc); }; const delayedRemovePickerFunc = () => setTimeout(removePickerFunc, 100); picker.addEventListener("input", onChange); picker.addEventListener("change", removePickerFunc); picker.addEventListener("blur", delayedRemovePickerFunc); }); currentSwatchElement.sokes_click_listener_added = true;
-                     }
- 
-                    // Final redraw call
-                     nodeObject.setDirtyCanvas(true, true);
- 
-                }, 50); // End setTimeout
-                return result;
-            }; // End onNodeCreated
-        } // End if nodeData.name
-    }, // End beforeRegisterNodeDef
-}); // End registerExtension
+                };
+                // ************************************************
+                
+                if (hexWidget) {
+                    // Hijack the original callback to sync our swatch on manual typing
+                    const originalCallback = hexWidget.callback;
+                    hexWidget.callback = (value) => {
+                        syncSwatchFromWidget(value);
+                        return originalCallback?.apply(this, arguments);
+                    };
+                    
+                    // Create a new custom HTML widget and add our swatch to it
+                    const widget = this.addDOMWidget("color_picker", "div", swatch);
+                    widget.serialize = false; // Don't save this widget's value
+
+                    // Initial sync
+                    setTimeout(() => syncSwatchFromWidget(hexWidget.value), 0);
+                }
+            };
+        }
+    },
+});
