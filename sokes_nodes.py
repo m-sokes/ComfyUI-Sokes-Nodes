@@ -9,7 +9,8 @@ import glob
 import torch
 import numpy as np
 import cv2 # Not used directly in all snippets, but kept from original for broader context
-from PIL import Image, ImageOps
+from PIL import Image, ImageOps, ImageDraw
+import math
 
 import webcolors
 from colormath.color_objects import sRGBColor, LabColor
@@ -24,75 +25,39 @@ if not hasattr(np, "asscalar"):
 # --- ComfyUI Integration Imports & Preview Logic ---
 try:
     import folder_paths
-    # print("sokes_nodes.py: Successfully imported 'folder_paths'.")
 except ImportError:
-    # print("sokes_nodes.py: 'folder_paths' module not found. Path resolution might be limited.")
     folder_paths = None
 
 preview_available = False
 PromptServer = None
-nodes_module = None # Renamed to avoid conflict with class name 'nodes' if any
+nodes_module = None 
 comfy_utils_available = False
 
-# print("sokes_nodes.py: Attempting to import ComfyUI specific modules for previews...")
 try:
     from server import PromptServer
-    # print("sokes_nodes.py:  - Successfully imported 'PromptServer' from 'server'.")
 except ImportError as e:
-    # print(f"sokes_nodes.py:  - FAILED to import 'PromptServer' from 'server'. Error: {e}")
-    pass # Fail silently for now, checks below will handle
-except Exception as e:
-    # print(f"sokes_nodes.py:  - FAILED to import 'PromptServer' from 'server' with OTHER error: {e}")
-    pass
+    pass 
 
 try:
     import comfy.utils
     comfy_utils_available = True
-    # print("sokes_nodes.py:  - Successfully imported 'comfy.utils' module.")
-    # try:
-    #     from comfy.utils import FONT_PATH # This specific import might fail, but it's not critical
-    #     #print("sokes_nodes.py:    - Successfully imported 'FONT_PATH' from 'comfy.utils'.")
-    # except ImportError:
-    #     #print("sokes_nodes.py:    - Note: 'FONT_PATH' not found in 'comfy.utils' (this is okay for previews).")
-    #     pass
 except ImportError as e:
-    # print(f"sokes_nodes.py:  - FAILED to import 'comfy.utils' module. Error: {e}")
-    pass
-except Exception as e:
-    # print(f"sokes_nodes.py:  - FAILED to import 'comfy.utils' module with OTHER error: {e}")
     pass
 
 try:
-    import nodes # This is ComfyUI's 'nodes.py'
+    import nodes 
     nodes_module = nodes
-    # print("sokes_nodes.py:  - Successfully imported ComfyUI 'nodes' module.")
 except ImportError as e:
-    # print(f"sokes_nodes.py:  - FAILED to import ComfyUI 'nodes' module. Error: {e}")
-    pass
-except Exception as e:
-    # print(f"sokes_nodes.py:  - FAILED to import ComfyUI 'nodes' module with OTHER error: {e}")
     pass
 
 if PromptServer and comfy_utils_available and nodes_module:
     try:
-        PromptServer.instance # Crucial check: is the server actually running and instance available?
+        PromptServer.instance 
         preview_available = True
-        # print("sokes_nodes.py: Preview system checks passed. Previews should be available.")
     except AttributeError:
-        # print("sokes_nodes.py: 'PromptServer.instance' not found (AttributeError). Previews will be disabled.")
         preview_available = False
     except Exception as e:
-        # print(f"sokes_nodes.py: 'PromptServer.instance' check failed ({type(e).__name__}: {e}). Previews will be disabled.")
         preview_available = False
-# else: # Simplified console output for brevity during normal operation
-    # missing_components_msg = []
-    # if not PromptServer: missing_components_msg.append("'PromptServer'")
-    # if not comfy_utils_available: missing_components_msg.append("'comfy.utils' module")
-    # if not nodes_module: missing_components_msg.append("ComfyUI 'nodes' module")
-    # if missing_components_msg:
-        # print(f"sokes_nodes.py: One or more ComfyUI components for previews failed to import ({', '.join(missing_components_msg)}). Previews disabled.")
-    # If components imported but PromptServer.instance failed, that message was already printed (if uncommented).
-
 # --- End ComfyUI Integration Imports & Preview Logic ---
 
 
@@ -117,40 +82,18 @@ class current_date_time_sokes:
 
     def current_date_time_sokes(self, date_time_format):
         now = datetime.now()
-        
-        # Start with the user's original format string.
         temp_format = date_time_format
-
-        # 1. Translate the non-ambiguous, multi-letter custom codes to Python's strftime codes.
-        # This is the "convert them first" step. We use simple replacement, which is safe for these codes.
-        # The order here doesn't strictly matter, but it's clear.
-        # We use re.sub for case-insensitivity.
         temp_format = re.sub('YYYY', '%Y', temp_format, flags=re.IGNORECASE)
         temp_format = re.sub('YY',  '%y', temp_format, flags=re.IGNORECASE)
         temp_format = re.sub('MM',  '%m', temp_format, flags=re.IGNORECASE)
         temp_format = re.sub('DD',  '%d', temp_format, flags=re.IGNORECASE)
-
-        # 2. Now, handle the ambiguous single-letter codes.
-        # We replace these directly with their final numeric values. This avoids all conflicts.
-        # The crucial part is the `(?<!%)` negative lookbehind, which ensures we do NOT
-        # touch a letter if it's part of a standard Python code (like the 'M' in '%M').
-        
-        # Replace 'M' (but not '%M') with the numeric month.
         temp_format = re.sub(r'(?<!%)\bM\b', str(now.month), temp_format, flags=re.IGNORECASE)
-        
-        # Replace 'D' (but not '%D') with the numeric day.
         temp_format = re.sub(r'(?<!%)\bD\b', str(now.day), temp_format, flags=re.IGNORECASE)
-
-        # 3. The `temp_format` string is now a clean mix of standard %-codes and pre-filled numbers.
-        #    Example: "YYYY-M-DD_%H-%M-%S" has become "%Y-6-%d_%H-%M-%S" (for June).
-        #    We can now safely call strftime once to process the remaining %-codes.
         final_string = now.strftime(temp_format)
-        
         return (final_string,)
 
     @classmethod
     def IS_CHANGED(cls, date_time_format):
-        # Always re-run this node to get the current time.
         return (datetime.now().timestamp(),)
 
 # END Current Date & Time | Sokes 🦬
@@ -181,22 +124,14 @@ class latent_input_switch_9x_sokes:
     CATEGORY = "Sokes 🦬"
 
     def latent_input_switch_9x_sokes(self, latent_select, latent_0, latent_1=None, latent_2=None, latent_3=None, latent_4=None, latent_5=None, latent_6=None, latent_7=None, latent_8=None):
-        latent_map = {
-            0: latent_0, 1: latent_1, 2: latent_2, 3: latent_3, 4: latent_4,
-            5: latent_5, 6: latent_6, 7: latent_7, 8: latent_8
-        }
+        latent_map = { 0: latent_0, 1: latent_1, 2: latent_2, 3: latent_3, 4: latent_4, 5: latent_5, 6: latent_6, 7: latent_7, 8: latent_8 }
         select_idx = int(round(latent_select))
-        selected_latent = latent_map.get(select_idx) # Get will return None if key doesn't exist
-
+        selected_latent = latent_map.get(select_idx)
         if selected_latent is not None:
             return (selected_latent,)
         else:
-            # Fallback to latent_0 if selection is invalid or selected latent is None
-            # (and latent_0 itself is not None, though it's required)
-            if select_idx not in latent_map:
-                 print(f"latent_input_switch_9x_sokes: Invalid latent_select index {select_idx}. Defaulting to latent_0.")
-            elif select_idx != 0 : # only print if not trying to select a None optional input (and it wasn't latent_0)
-                 print(f"latent_input_switch_9x_sokes: latent_{select_idx} is None. Defaulting to latent_0.")
+            if select_idx not in latent_map: print(f"latent_input_switch_9x_sokes: Invalid latent_select index {select_idx}. Defaulting to latent_0.")
+            elif select_idx != 0 : print(f"latent_input_switch_9x_sokes: latent_{select_idx} is None. Defaulting to latent_0.")
             return (latent_0,)
 
 # END Latent Input Swtich x9 | Sokes 🦬
@@ -208,16 +143,10 @@ class latent_input_switch_9x_sokes:
 class replace_text_regex_sokes:
     @classmethod
     def INPUT_TYPES(cls):
-        return {"required": {
-            "text": ("STRING", {"multiline": True, "defaultBehavior": "input"}),
-            "regex_pattern": ("STRING", {"multiline": False}),
-            "new": ("STRING", {"multiline": False})
-        }}
-
+        return {"required": { "text": ("STRING", {"multiline": True, "defaultBehavior": "input"}), "regex_pattern": ("STRING", {"multiline": False}), "new": ("STRING", {"multiline": False}) }}
     RETURN_TYPES = ("STRING",)
     FUNCTION = "fn_replace_text_regex_sokes"
     CATEGORY = "Sokes 🦬"
-
     def fn_replace_text_regex_sokes(self, regex_pattern, new, text):
         return (re.sub(regex_pattern, new, text),)
 
@@ -230,223 +159,130 @@ class replace_text_regex_sokes:
 
 class load_random_image_sokes:
     IMG_EXTENSIONS = [".png", ".jpg", ".jpeg", ".bmp", ".webp", ".JPEG", ".JPG", ".PNG"]
-
     def __init__(self):
         self.output_dir = folder_paths.get_temp_directory() if folder_paths else "temp_sokes_previews"
         self.type = "temp"
         if not os.path.exists(self.output_dir):
-            try:
-                os.makedirs(self.output_dir, exist_ok=True)
-            except Exception as e:
-                print(f"sokes_nodes.py load_random_image_sokes: Warning: Could not create temp directory {self.output_dir}: {e}")
-
+            try: os.makedirs(self.output_dir, exist_ok=True)
+            except Exception as e: print(f"sokes_nodes.py load_random_image_sokes: Warning: Could not create temp directory {self.output_dir}: {e}")
     @classmethod
     def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "folder_path": ("STRING", {"default": "", "multiline": True}),
-                "filename_optional": ("STRING", {"default": "", "multiline": False}),
-                "search_subfolders": ("BOOLEAN", {"default": False}),
-                "n_images": ("INT", {"default": 1, "min": 1, "max": 100}),
-                "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff}),
-                "sort": ("BOOLEAN", {"default": False}),
-                "export_with_alpha": ("BOOLEAN", {"default": False}),
-            }
-        }
-
+        return { "required": { "folder_path": ("STRING", {"default": "", "multiline": True}), "filename_optional": ("STRING", {"default": "", "multiline": False}), "search_subfolders": ("BOOLEAN", {"default": False}), "n_images": ("INT", {"default": 1, "min": 1, "max": 100}), "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff}), "sort": ("BOOLEAN", {"default": False}), "export_with_alpha": ("BOOLEAN", {"default": False}), } }
     CATEGORY = "Sokes 🦬/Loaders"
-    RETURN_TYPES = ("IMAGE", "MASK", "LIST")
-    RETURN_NAMES = ("image", "mask", "image_path")
-    FUNCTION = "load_image_or_file"
-    OUTPUT_NODE = True
-
+    RETURN_TYPES = ("IMAGE", "MASK", "LIST"); RETURN_NAMES = ("image", "mask", "image_path"); FUNCTION = "load_image_or_file"; OUTPUT_NODE = True
     def _get_all_matching_images(self, folder_path, filename_optional, search_subfolders):
-        """Helper to find all image files based on paths, wildcards, and pipe/newline delimiters."""
         image_paths_found = []
-        
-        path_string = folder_path.replace('\n', '|')
-        folder_paths_list = [p.strip() for p in path_string.split('|') if p.strip()]
-
+        path_string = folder_path.replace('\n', '|'); folder_paths_list = [p.strip() for p in path_string.split('|') if p.strip()]
         for p in folder_paths_list:
-            # UPDATED: First, check if the provided path 'p' is a direct file path.
             if os.path.isfile(p):
-                # If it's a file, check if it's a supported image type and add it.
-                # This ignores filename_optional for this specific entry.
-                if any(p.lower().endswith(ext) for ext in self.IMG_EXTENSIONS):
-                    image_paths_found.append(os.path.normpath(os.path.abspath(p)))
-                # Then, skip to the next item in the list.
+                if any(p.lower().endswith(ext) for ext in self.IMG_EXTENSIONS): image_paths_found.append(os.path.normpath(os.path.abspath(p)))
                 continue
-
-            # If 'p' is not a file, treat it as a directory or pattern and combine with filename_optional.
             pattern = os.path.join(p, filename_optional)
-            try:
-                glob_matches = glob.glob(pattern, recursive=True)
-            except Exception as e:
-                print(f"sokes_nodes.py: Warning - glob pattern '{pattern}' is invalid: {e}")
-                continue
-
+            try: glob_matches = glob.glob(pattern, recursive=True)
+            except Exception as e: print(f"sokes_nodes.py: Warning - glob pattern '{pattern}' is invalid: {e}"); continue
             for match in glob_matches:
                 abs_match = os.path.abspath(match)
-                if not os.path.exists(abs_match):
-                    continue
-
+                if not os.path.exists(abs_match): continue
                 if os.path.isfile(abs_match):
-                    if any(abs_match.lower().endswith(ext) for ext in self.IMG_EXTENSIONS):
-                        image_paths_found.append(os.path.normpath(abs_match))
+                    if any(abs_match.lower().endswith(ext) for ext in self.IMG_EXTENSIONS): image_paths_found.append(os.path.normpath(abs_match))
                 elif os.path.isdir(abs_match):
-                    try:
-                        images_in_dir = self.find_image_files(abs_match, search_subfolders)
-                        image_paths_found.extend(images_in_dir)
-                    except Exception as e:
-                        print(f"sokes_nodes.py: Warning - Could not search directory '{abs_match}': {e}")
+                    try: images_in_dir = self.find_image_files(abs_match, search_subfolders); image_paths_found.extend(images_in_dir)
+                    except Exception as e: print(f"sokes_nodes.py: Warning - Could not search directory '{abs_match}': {e}")
         return image_paths_found
-
     def find_image_files(self, folder_path_abs: str, search_subfolders: bool):
-        image_paths = []
-        img_extensions_lower = [ext.lower() for ext in self.IMG_EXTENSIONS]
-        
-        if not os.path.isdir(folder_path_abs):
-            raise FileNotFoundError(f"Directory not found for listing: {folder_path_abs}")
-
+        image_paths = []; img_extensions_lower = [ext.lower() for ext in self.IMG_EXTENSIONS]
+        if not os.path.isdir(folder_path_abs): raise FileNotFoundError(f"Directory not found for listing: {folder_path_abs}")
         try:
             if search_subfolders:
                 for root, _, files in os.walk(folder_path_abs):
                     for file_name_in_walk in files:
                         if file_name_in_walk.lower().endswith(tuple(img_extensions_lower)):
                            full_path = os.path.join(root, file_name_in_walk)
-                           if os.path.isfile(full_path):
-                               image_paths.append(os.path.normpath(full_path))
+                           if os.path.isfile(full_path): image_paths.append(os.path.normpath(full_path))
             else:
                 for f_name in os.listdir(folder_path_abs):
                     full_path = os.path.join(folder_path_abs, f_name)
-                    if os.path.isfile(full_path) and f_name.lower().endswith(tuple(img_extensions_lower)):
-                        image_paths.append(os.path.normpath(full_path))
-        except Exception as e:
-            raise Exception(f"Error listing files in folder '{folder_path_abs}': {e}")
+                    if os.path.isfile(full_path) and f_name.lower().endswith(tuple(img_extensions_lower)): image_paths.append(os.path.normpath(full_path))
+        except Exception as e: raise Exception(f"Error listing files in folder '{folder_path_abs}': {e}")
         return image_paths
-
     def validate_and_load_image(self, image_path_abs: str, final_image_mode: str):
         try:
-            img_pil = Image.open(image_path_abs)
-            img_pil = ImageOps.exif_transpose(img_pil)
-
+            img_pil = Image.open(image_path_abs); img_pil = ImageOps.exif_transpose(img_pil)
             actual_format = imghdr.what(image_path_abs)
             if not actual_format:
                 try: img_pil.verify()
-                except Exception as pil_e:
-                    raise ValueError(f"Invalid/corrupt image (PIL verify): {os.path.basename(image_path_abs)} - {pil_e}")
-            
+                except Exception as pil_e: raise ValueError(f"Invalid/corrupt image (PIL verify): {os.path.basename(image_path_abs)} - {pil_e}")
             converted_image_pil = img_pil.convert(final_image_mode) if img_pil.mode != final_image_mode else img_pil
-            image_np = np.array(converted_image_pil).astype(np.float32) / 255.0
-            image_tensor = torch.from_numpy(image_np)[None,]
-
-            mask_tensor = None
+            image_np = np.array(converted_image_pil).astype(np.float32) / 255.0; image_tensor = torch.from_numpy(image_np)[None,]
             if img_pil.mode in ('RGBA', 'LA') or (img_pil.mode == 'P' and 'transparency' in img_pil.info):
                 alpha_source_pil = img_pil.convert('RGBA') if final_image_mode == 'RGB' else converted_image_pil
                 mask_pil_channel = alpha_source_pil.split()[-1]
-                mask_np = np.array(mask_pil_channel).astype(np.float32) / 255.0
-                mask_tensor = torch.from_numpy(mask_np)[None,]
+                mask_np = np.array(mask_pil_channel).astype(np.float32) / 255.0; mask_tensor = torch.from_numpy(mask_np)[None,]
             else:
                 mask_shape = (image_tensor.shape[1], image_tensor.shape[2])
-                mask_np = np.ones(mask_shape, dtype=np.float32)
-                mask_tensor = torch.from_numpy(mask_np)[None,]
+                mask_np = np.ones(mask_shape, dtype=np.float32); mask_tensor = torch.from_numpy(mask_np)[None,]
             return image_tensor, mask_tensor, converted_image_pil
-        except FileNotFoundError:
-            raise FileNotFoundError(f"Image not found: {os.path.basename(image_path_abs)}")
+        except FileNotFoundError: raise FileNotFoundError(f"Image not found: {os.path.basename(image_path_abs)}")
         except ValueError as ve: raise ve
-        except Exception as e:
-            raise RuntimeError(f"Error loading/processing image {os.path.basename(image_path_abs)}: {e}")
-
+        except Exception as e: raise RuntimeError(f"Error loading/processing image {os.path.basename(image_path_abs)}: {e}")
+    
     def load_image_or_file(self, folder_path, filename_optional, search_subfolders, n_images, seed, sort, export_with_alpha):
-        image_paths_found_normalized = self._get_all_matching_images(folder_path, filename_optional, search_subfolders)
+        if not folder_path or not folder_path.strip():
+            print("sokes_nodes.py Load Random Image: folder_path is empty. Returning a default black image.")
+            black_image_pil = Image.new('RGB', (64, 64), (0, 0, 0))
+            image_np = np.array(black_image_pil).astype(np.float32) / 255.0
+            image_tensor = torch.from_numpy(image_np)[None,]
+            mask_np = np.ones((64, 64), dtype=np.float32)
+            mask_tensor = torch.from_numpy(mask_np)[None,]
+            return (image_tensor, mask_tensor, [""])
 
+        image_paths_found_normalized = self._get_all_matching_images(folder_path, filename_optional, search_subfolders)
         unique_paths_for_validation = sorted(list(set(image_paths_found_normalized)))
-        
         valid_image_paths_set = set()
         for f_path_norm in unique_paths_for_validation:
             try:
                 with Image.open(f_path_norm) as img_test: img_test.verify()
                 valid_image_paths_set.add(f_path_norm)
             except Exception:
-                if os.path.exists(f_path_norm):
-                    print(f"sokes_nodes.py: Skipping invalid/corrupt file: {os.path.basename(f_path_norm)}")
-        
+                if os.path.exists(f_path_norm): print(f"sokes_nodes.py: Skipping invalid/corrupt file: {os.path.basename(f_path_norm)}")
         final_selection_pool = [p for p in image_paths_found_normalized if p in valid_image_paths_set]
-        
-        if not final_selection_pool:
-            raise FileNotFoundError(f"No valid images found for folder='{folder_path}' and filename='{filename_optional}'. Check paths, wildcards, and permissions.")
-
-        num_available = len(final_selection_pool)
-        actual_n_images = min(n_images, num_available) if n_images > 0 else num_available
+        if not final_selection_pool: raise FileNotFoundError(f"No valid images found for folder='{folder_path}' and filename='{filename_optional}'. Check paths, wildcards, and permissions.")
+        num_available = len(final_selection_pool); actual_n_images = min(n_images, num_available) if n_images > 0 else num_available
         if actual_n_images == 0: raise ValueError("Zero images to load after filtering valid images.")
-        
-        if actual_n_images < n_images and n_images > 0:
-              print(f"sokes_nodes.py: Warning: Requested {n_images} images, but only {num_available} were in the weighted pool. Loading {actual_n_images}.")
-
+        if actual_n_images < n_images and n_images > 0: print(f"sokes_nodes.py: Warning: Requested {n_images} images, but only {num_available} were in the weighted pool. Loading {actual_n_images}.")
         selected_paths_abs = []
         if not sort:
-            random.seed(seed)
-            random.shuffle(final_selection_pool)
+            random.seed(seed); random.shuffle(final_selection_pool)
             selected_paths_abs = final_selection_pool[:actual_n_images]
         else:
-            def natural_sort_key(s_path):
-                return [int(text) if text.isdigit() else text.lower() for text in re.split(r'([0-9]+)', os.path.basename(s_path))]
-            
+            def natural_sort_key(s_path): return [int(text) if text.isdigit() else text.lower() for text in re.split(r'([0-9]+)', os.path.basename(s_path))]
             final_selection_pool.sort(key=natural_sort_key)
-            
             start_python_index = 0
-            if seed > 0 and num_available > 0:
-                start_python_index = (seed - 1) % num_available
-            
+            if seed > 0 and num_available > 0: start_python_index = (seed - 1) % num_available
             selected_paths_abs = [final_selection_pool[(start_python_index + i) % num_available] for i in range(actual_n_images)]
-
         if not selected_paths_abs: raise ValueError("No images were selected to load for processing.")
-
-        output_images_tensor_list, output_masks_tensor_list = [], []
-        loaded_paths_final_abs, pil_images_for_preview = [], []
-        
+        output_images_tensor_list, output_masks_tensor_list = [], []; loaded_paths_final_abs, pil_images_for_preview = [], []
         final_image_mode = "RGB"
         if export_with_alpha:
-            paths_to_check = list(set(selected_paths_abs))
-            for image_path_check_abs in paths_to_check:
+            for image_path_check_abs in list(set(selected_paths_abs)):
                 try:
                     with Image.open(image_path_check_abs) as img_pil_check:
-                         if img_pil_check.mode in ('RGBA', 'LA') or \
-                            (img_pil_check.mode == 'P' and 'transparency' in img_pil_check.info):
-                            final_image_mode = "RGBA"; break
+                         if img_pil_check.mode in ('RGBA', 'LA') or (img_pil_check.mode == 'P' and 'transparency' in img_pil_check.info): final_image_mode = "RGBA"; break
                 except: pass
-        
-        if export_with_alpha and final_image_mode == "RGB" and selected_paths_abs:
-            print(f"sokes_nodes.py: Note: export_with_alpha=True, but no images with alpha found in selection. Outputting RGB.")
-
-        first_image_shape_hwc = None
-        warned_about_shapes = set()
-        
+        if export_with_alpha and final_image_mode == "RGB" and selected_paths_abs: print(f"sokes_nodes.py: Note: export_with_alpha=True, but no images with alpha found in selection. Outputting RGB.")
+        first_image_shape_hwc = None; warned_about_shapes = set()
         for image_path_abs_current in selected_paths_abs:
             try:
                 image_tensor, mask_tensor, loaded_pil_image = self.validate_and_load_image(image_path_abs_current, final_image_mode)
-                
                 current_shape_hwc = image_tensor.shape[1:4]
-                if first_image_shape_hwc is None:
-                    first_image_shape_hwc = current_shape_hwc
+                if first_image_shape_hwc is None: first_image_shape_hwc = current_shape_hwc
                 elif current_shape_hwc != first_image_shape_hwc and image_path_abs_current not in warned_about_shapes:
-                    print(f"sokes_nodes.py: ⚠️ Warning: Image {os.path.basename(image_path_abs_current)} dims/chans ({current_shape_hwc}) "
-                          f"differ from first image ({first_image_shape_hwc}). Batch may be inconsistent.")
+                    print(f"sokes_nodes.py: ⚠️ Warning: Image {os.path.basename(image_path_abs_current)} dims/chans ({current_shape_hwc}) differ from first image ({first_image_shape_hwc}). Batch may be inconsistent.")
                     warned_about_shapes.add(image_path_abs_current)
-
-                output_images_tensor_list.append(image_tensor)
-                output_masks_tensor_list.append(mask_tensor)
-                loaded_paths_final_abs.append(image_path_abs_current)
-                pil_images_for_preview.append(loaded_pil_image)
-            except Exception as e:
-                print(f"sokes_nodes.py: ❌ Skipping image {os.path.basename(image_path_abs_current)} due to error: {str(e)}")
-                continue
-
+                output_images_tensor_list.append(image_tensor); output_masks_tensor_list.append(mask_tensor); loaded_paths_final_abs.append(image_path_abs_current); pil_images_for_preview.append(loaded_pil_image)
+            except Exception as e: print(f"sokes_nodes.py: ❌ Skipping image {os.path.basename(image_path_abs_current)} due to error: {str(e)}"); continue
         if not output_images_tensor_list: raise ValueError("No images were successfully loaded into tensors.")
-        
-        final_image_batch = torch.cat(output_images_tensor_list, dim=0)
-        final_mask_batch = torch.cat(output_masks_tensor_list, dim=0)
-        
+        final_image_batch = torch.cat(output_images_tensor_list, dim=0); final_mask_batch = torch.cat(output_masks_tensor_list, dim=0)
         previews_out_list = []
         if preview_available and pil_images_for_preview:
             preview_subfolder_name = "sokes_nodes_previews"
@@ -454,50 +290,29 @@ class load_random_image_sokes:
             if not os.path.exists(full_preview_output_folder):
                 try: os.makedirs(full_preview_output_folder, exist_ok=True)
                 except: print(f"sokes_nodes.py: Error creating preview subfolder {full_preview_output_folder}. Previews may fail.")
-
             for i, pil_img in enumerate(pil_images_for_preview):
                 try:
                     unique_hash = hashlib.sha1(f"{loaded_paths_final_abs[i]}_{i}".encode('utf-8')).hexdigest()[:10]
-                    preview_filename = f"preview_{unique_hash}.png"
-                    filepath = os.path.join(full_preview_output_folder, preview_filename)
+                    preview_filename = f"preview_{unique_hash}.png"; filepath = os.path.join(full_preview_output_folder, preview_filename)
                     pil_img.save(filepath, compress_level=4)
-                    previews_out_list.append({
-                        "filename": preview_filename,
-                        "subfolder": preview_subfolder_name,
-                        "type": self.type
-                    })
-                except Exception as e_prev:
-                    print(f"sokes_nodes.py: Error generating preview for {os.path.basename(loaded_paths_final_abs[i])}: {e_prev}")
-        
+                    previews_out_list.append({"filename": preview_filename, "subfolder": preview_subfolder_name, "type": self.type})
+                except Exception as e_prev: print(f"sokes_nodes.py: Error generating preview for {os.path.basename(loaded_paths_final_abs[i])}: {e_prev}")
         return {"ui": {"images": previews_out_list}, "result": (final_image_batch, final_mask_batch, loaded_paths_final_abs)}
-
     @classmethod
     def IS_CHANGED(cls, folder_path, filename_optional, search_subfolders, n_images, seed, sort, export_with_alpha):
+        if not folder_path or not folder_path.strip(): return f"no_path_{seed}"
         instance = cls()
-        try:
-            image_paths = instance._get_all_matching_images(folder_path, filename_optional, search_subfolders)
-        except Exception as e:
-            return f"path_error_{folder_path}_{filename_optional}_{e}"
-
-        if not image_paths:
-            return f"no_files_{folder_path}_{filename_optional}_{search_subfolders}_{n_images}_{seed}_{sort}_{export_with_alpha}"
-
-        mtimes = []
-        unique_paths = sorted(list(set(image_paths)))
+        try: image_paths = instance._get_all_matching_images(folder_path, filename_optional, search_subfolders)
+        except Exception as e: return f"path_error_{folder_path}_{filename_optional}_{e}"
+        if not image_paths: return f"no_files_{folder_path}_{filename_optional}_{search_subfolders}_{n_images}_{seed}_{sort}_{export_with_alpha}"
+        mtimes = []; unique_paths = sorted(list(set(image_paths)))
         for p in unique_paths:
-            try:
-                mtimes.append(os.path.getmtime(p))
-            except OSError:
-                pass
-        
+            try: mtimes.append(os.path.getmtime(p))
+            except OSError: pass
         hasher = hashlib.sha256()
-        hasher.update(str(sorted(image_paths)).encode('utf-8'))
-        hasher.update(str(sorted(mtimes)).encode('utf-8'))
-        
+        hasher.update(str(sorted(image_paths)).encode('utf-8')); hasher.update(str(sorted(mtimes)).encode('utf-8'))
         params_string = f"_{search_subfolders}_{n_images}_{seed}_{sort}_{export_with_alpha}_{filename_optional}"
-        hasher.update(params_string.encode('utf-8'))
-        
-        return hasher.hexdigest()
+        hasher.update(params_string.encode('utf-8')); return hasher.hexdigest()
 
 # END Load Random Image with Path and Mask | Sokes 🦬
 ##############################################################
@@ -508,118 +323,585 @@ class load_random_image_sokes:
 
 class hex_to_color_name_sokes:
     CATEGORY = "Sokes 🦬"
-    RETURN_TYPES = ("STRING",)
-    RETURN_NAMES = ("color_name",)
-    FUNCTION = "hex_to_color_name_fn"
-
+    RETURN_TYPES = ("STRING", "STRING",); RETURN_NAMES = ("color_name", "hex",) ; FUNCTION = "execute"
     @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "hex_color": ("STRING", {"default": "#FFFFFF", "multiline": False}),
-            },
-            "optional": {
-                "use_css_name": ("BOOLEAN", {"default": False})
-            }
-        }
-
-    def hex_to_color_name_fn(self, hex_color, use_css_name=False):
-        if not hex_color: return ("Input hex color is empty.",)
-        hex_color_proc = hex_color.strip()
+    def INPUT_TYPES(cls): return { "required": { "hex_color": ("STRING", {"default": "#FFFFFF"}), }, "optional": { "use_css_name": ("BOOLEAN", {"default": False}) } }
+    
+    def execute(self, hex_color, use_css_name=False):
+        # Initial validation and processing
+        if not hex_color:
+            result_tuple = ("Input hex color is empty.", "#000000")
+            return {"ui": {"hex_color": [result_tuple[1]]}, "result": result_tuple}
+            
+        hex_color_proc = hex_color.strip().upper() # Standardize to uppercase
         if not hex_color_proc.startswith("#"): hex_color_proc = "#" + hex_color_proc
-        if len(hex_color_proc) == 4:
-            hex_color_proc = f"#{hex_color_proc[1]*2}{hex_color_proc[2]*2}{hex_color_proc[3]*2}"
-        if len(hex_color_proc) != 7: return (f"Invalid hex format: {hex_color} (processed: {hex_color_proc})",)
+        if len(hex_color_proc) == 4: hex_color_proc = f"#{hex_color_proc[1]*2}{hex_color_proc[2]*2}{hex_color_proc[3]*2}"
+        
+        # Prepare the UI data packet with the processed hex
+        ui_data = {"hex_color": [hex_color_proc]}
 
+        if len(hex_color_proc) != 7:
+            result_tuple = (f"Invalid hex format: {hex_color}", hex_color)
+            return {"ui": {"hex_color": [hex_color]}, "result": result_tuple} # Send original back on failure
+            
         try:
+            # Find exact CSS3 name match
             standard_name = webcolors.hex_to_name(hex_color_proc, spec="css3")
-            final_color_name = standard_name
-            if not use_css_name:
-                 final_color_name = human_readable_map.get(standard_name, standard_name)
-            return (final_color_name,)
+            final_color_name = human_readable_map.get(standard_name, standard_name) if not use_css_name else standard_name
+            result_tuple = (final_color_name, hex_color_proc)
+            return {"ui": ui_data, "result": result_tuple}
         except ValueError:
+            # If no exact match, find the closest color
             try:
                 requested_rgb_clamped = tuple(max(0, min(255, c)) for c in webcolors.hex_to_rgb(hex_color_proc))
                 requested_lab = convert_color(sRGBColor(*requested_rgb_clamped, is_upscaled=True), LabColor)
             except Exception as e:
-                return (f"Invalid input hex '{hex_color_proc}' or conversion error: {e}",)
-
-            min_dist = float('inf')
-            closest_name_internal = None
-            
-            color_sources = [
-                explicit_targets_for_comparison, # Check explicit targets first
-                css3_names_to_hex              # Then CSS3 names
-            ]
-
-            for source_map in color_sources:
+                result_tuple = (f"Invalid input hex '{hex_color_proc}'", hex_color_proc)
+                return {"ui": ui_data, "result": result_tuple}
+                
+            min_dist = float('inf'); closest_name_internal = None
+            # Search explicit targets first, then all CSS3 colors
+            for source_map in [explicit_targets_for_comparison, css3_names_to_hex]:
                 for name_key, hex_val_orig in source_map.items():
-                    current_hex_proc = hex_val_orig.strip()
-                    if not current_hex_proc.startswith("#"): current_hex_proc = "#" + current_hex_proc
-                    if len(current_hex_proc) == 4:
-                        current_hex_proc = f"#{current_hex_proc[1]*2}{current_hex_proc[2]*2}{current_hex_proc[3]*2}"
-                    if len(current_hex_proc) != 7: continue
-
+                    # Normalize candidate hex for comparison
+                    current_hex_cand = hex_val_orig.strip()
+                    if not current_hex_cand.startswith("#"): current_hex_cand = "#" + current_hex_cand
+                    if len(current_hex_cand) == 4: current_hex_cand = f"#{current_hex_cand[1]*2}{current_hex_cand[2]*2}{current_hex_cand[3]*2}"
+                    if len(current_hex_cand) != 7: continue
                     try:
-                        cand_rgb_clamped = tuple(max(0, min(255, c)) for c in webcolors.hex_to_rgb(current_hex_proc))
+                        cand_rgb_clamped = tuple(max(0, min(255, c)) for c in webcolors.hex_to_rgb(current_hex_cand))
                         cand_lab = convert_color(sRGBColor(*cand_rgb_clamped, is_upscaled=True), LabColor)
                         d = delta_e_cie2000(requested_lab, cand_lab)
-                        if d < min_dist:
-                            min_dist = d
-                            closest_name_internal = name_key 
-                    except Exception: # Ignore errors for individual candidates
-                        pass 
+                        if d < min_dist: min_dist = d; closest_name_internal = name_key 
+                    except Exception: pass 
             
-            if closest_name_internal is None: return ("Could not find any closest color match.",)
-
-            if use_css_name:
-                final_color_name = closest_name_internal # Could be from explicit_targets or css3_names_to_hex
-                # If it was from explicit_targets, and a true CSS name is desired, this might need adjustment
-                # or we assume explicit_targets keys are "CSS-like enough" if use_css_name is true.
+            if closest_name_internal is None:
+                result_tuple = ("Could not find any closest color match.", hex_color_proc)
             else:
-                final_color_name = human_readable_map.get(closest_name_internal, closest_name_internal)
+                final_color_name = human_readable_map.get(closest_name_internal, closest_name_internal) if not use_css_name else closest_name_internal
+                result_tuple = (final_color_name, hex_color_proc)
             
-            return (final_color_name,)
+            return {"ui": ui_data, "result": result_tuple}
 
-# END: Hex to Color Name | Sokes 🦬
+# END Hex to Color Name | Sokes 🦬
+##############################################################
+
+
+##############################################################
+# START Hex Color Swatch | Sokes 🦬
+
+class hex_color_swatch_sokes:
+    CATEGORY = "Sokes 🦬"
+    RETURN_TYPES = ()
+    FUNCTION = "execute"
+    OUTPUT_NODE = True
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        # Allow multiline input for easier entry of multiple hex codes
+        return {
+            "required": {
+                "hex": ("STRING", {"default": "#FF6347, #4682B4, #32CD32", "multiline": False}),
+            }
+        }
+
+    def execute(self, hex):
+        # Handle empty or whitespace-only input
+        if not hex or not hex.strip():
+            return {"ui": {"hex": []}}
+
+        # Split the input string by commas and strip whitespace from each part
+        color_strings = [c.strip() for c in hex.split(',') if c.strip()]
+        
+        processed_hexes = []
+        # Process up to a maximum of 10 valid colors
+        for color_str in color_strings[:10]:
+            c = color_str.upper()
+            # Automatically add '#' prefix if it's missing
+            if not c.startswith('#'):
+                c = '#' + c
+            
+            # Validate for 3 or 6-digit hex codes
+            if re.match(r'^#([0-9a-fA-F]{3}){1,2}$', c):
+                # Expand 3-digit hex to 6-digit for consistency
+                if len(c) == 4:
+                    c = f'#{c[1]*2}{c[2]*2}{c[3]*2}'
+                processed_hexes.append(c)
+            # Silently ignore any invalid formats
+
+        # The UI will receive a list of validated hex strings
+        return {"ui": {"hex": processed_hexes}}
+
+# END Hex Color Swatch | Sokes 🦬
 ##############################################################
 
 
 ##############################################################
 # START Random Number | Sokes 🦬
 class random_number_sokes:
-    CATEGORY = "Sokes 🦬"
-    RETURN_TYPES = ("INT", "FLOAT", "BOOLEAN")
-    RETURN_NAMES = ("integer_output", "float_output", "boolean_output")
-    FUNCTION = "generate_random_value"
+    CATEGORY = "Sokes 🦬"; RETURN_TYPES = ("INT", "FLOAT", "BOOLEAN"); RETURN_NAMES = ("integer_output", "float_output", "boolean_output"); FUNCTION = "generate_random_value"
+    @classmethod
+    def INPUT_TYPES(cls): return { "required": { "minimum": ("FLOAT", {"default": 0.0, "min": -1.0e18, "max": 1.0e18, "step": 0.01}), "maximum": ("FLOAT", {"default": 1.0, "min": -1.0e18, "max": 1.0e18, "step": 0.01}), "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff}), } }
+    def generate_random_value(self, minimum, maximum, seed):
+        min_val, max_val = min(minimum, maximum), max(minimum, maximum)
+        random.seed(seed)
+        primary_float = random.uniform(min_val, max_val)
+        derived_int = int(round(primary_float))
+        midpoint = min_val + (max_val - min_val) / 2.0; derived_bool = primary_float > midpoint
+        return (derived_int, primary_float, derived_bool)
+    @classmethod
+    def IS_CHANGED(cls, minimum, maximum, seed):
+        h = hashlib.sha256(); h.update(f"min:{minimum}-max:{maximum}-seed:{seed}".encode('utf-8')); return h.hexdigest()
+
+# END Random Number | Sokes 🦬
+##############################################################
+
+
+##############################################################
+# START Generate Random Background | Sokes 🦬
+class RandomArtGeneratorSokes:
+    CATEGORY = "Sokes 🦬/Generators"
+    RETURN_TYPES = ("IMAGE", "STRING", "STRING")
+    RETURN_NAMES = ("image", "description", "alpha_matte_path")
+    FUNCTION = "generate_art"
+    
+    def __init__(self):
+        self.output_dir = folder_paths.get_temp_directory() if folder_paths else "temp_sokes_previews"
+        self.type = "temp"
+        self.color_name_cache = {}
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        from PIL import ImageFilter, ImageEnhance # Check for imports early
+        return {
+            "required": {
+                "width": ("INT", {"default": 512, "min": 64, "max": 4096, "step": 8}),
+                "height": ("INT", {"default": 512, "min": 64, "max": 4096, "step": 8}),
+                "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff}),
+                "bg_type": (["Solid", "Gradient", "Fog"],),
+                "bg_color": ("STRING", {"default": "", "multiline": False, "placeholder": "e.g., #ff0000, 00ff00"}),
+                "compositionally_sound": ("BOOLEAN", {"default": True}),
+                "alpha_matte_folder": ("STRING", {"default": "", "multiline": False, "placeholder": "Path to folder with PNG/WEBP mattes"}),
+                "custom_alpha_color": ("STRING", {"default": "", "multiline": False, "placeholder": "Hex to tint matte, e.g., #FFFFFF"}),
+                "minimal_colors": ("BOOLEAN", {"default": False}),
+                "num_shapes": ("INT", {"default": 3, "min": 0, "max": 50, "step": 1}),
+                "shape_color_mode": (["Any color", "Neutral colors", "Custom colors"],),
+                "custom_shapes_colors": ("STRING", {"default": "#FF00FF, #552288, 993322", "multiline": False}),
+                "noise_level": ("INT", {"default": 0, "min": 0, "max": 10, "step": 1}),
+                "post_processing": (["None", "Blur", "Pixelate", "Brightness", "Sharpen", "Vignette", "Chromatic Aberration", "Halftone"],),
+                "post_processing_amount": ("INT", {"default": 0, "min": 0, "max": 100, "step": 1}),
+                "primary_color": ("STRING", {"default": "#000000", "placeholder": "Leave blank for random"}),
+                "secondary_color": ("STRING", {"default": "#FFFFFF", "placeholder": "Leave blank for random"}),
+            },
+            "optional": {}
+        }
+
+    def _get_color_name(self, hex_color):
+        if hex_color in self.color_name_cache: return self.color_name_cache[hex_color]
+        if not hex_color or not re.match(r'^#[0-9a-fA-F]{6}$', hex_color): return "unknown color"
+        result_name = "color"
+        try:
+            standard_name = webcolors.hex_to_name(hex_color, spec="css3")
+            result_name = human_readable_map.get(standard_name, standard_name)
+        except ValueError:
+            try:
+                requested_rgb = webcolors.hex_to_rgb(hex_color)
+                requested_lab = convert_color(sRGBColor(*requested_rgb, is_upscaled=True), LabColor)
+                min_dist, closest_name_internal = float('inf'), "color"
+                for source_map in [explicit_targets_for_comparison, css3_names_to_hex]:
+                    for name, hex_val in source_map.items():
+                        try:
+                            cand_rgb = webcolors.hex_to_rgb(hex_val)
+                            cand_lab = convert_color(sRGBColor(*cand_rgb, is_upscaled=True), LabColor)
+                            dist = delta_e_cie2000(requested_lab, cand_lab)
+                            if dist < min_dist: min_dist, closest_name_internal = dist, name
+                        except Exception: continue
+                result_name = human_readable_map.get(closest_name_internal, closest_name_internal)
+            except Exception: result_name = "indeterminate color"
+        self.color_name_cache[hex_color] = result_name
+        return result_name
+
+    def _generate_palette(self, minimal, primary_hex, secondary_hex):
+        if primary_hex == "#000000" and secondary_hex == "#FFFFFF":
+            if minimal:
+                base_r, base_g, base_b = [random.randint(0, 255) for _ in range(3)]
+                return [f"#{base_r:02x}{base_g:02x}{base_b:02x}", f"#{max(0, base_r-50):02x}{max(0, base_g-50):02x}{max(0, base_b-50):02x}", f"#{min(255, base_r+50):02x}{min(255, base_g+50):02x}{min(255, base_b+50):02x}"]
+            else: 
+                return [f"#{random.randint(0, 0xFFFFFF):06x}" for _ in range(random.randint(3, 5))]
+        p_color = primary_hex.strip() if primary_hex else f"#{random.randint(0, 0xFFFFFF):06x}"
+        s_color = secondary_hex.strip() if secondary_hex else f"#{random.randint(0, 0xFFFFFF):06x}"
+        palette = [p_color, s_color]
+        if minimal:
+            try:
+                r, g, b = webcolors.hex_to_rgb(p_color)
+                palette.append(f"#{max(0, min(255, r - 40)):02x}{max(0, min(255, g - 40)):02x}{max(0, min(255, b - 40)):02x}")
+            except ValueError: pass
+        return palette
+
+    def _parse_hex_colors(self, color_string):
+        if not color_string: return []
+        colors = []
+        for color_str in color_string.split(','):
+            c = color_str.strip()
+            if not c: continue
+            if not c.startswith('#'): c = '#' + c
+            if re.match(r'^#([0-9a-fA-F]{3}){1,2}$', c):
+                if len(c) == 4: c = f'#{c[1]*2}{c[2]*2}{c[3]*2}'
+                colors.append(c)
+        return colors
+
+    def _adjust_color(self, hex_str, factor):
+        r, g, b = webcolors.hex_to_rgb(hex_str)
+        r,g,b = int(min(255, max(0, r * factor))), int(min(255, max(0, g * factor))), int(min(255, max(0, b * factor)))
+        return f"#{r:02x}{g:02x}{b:02x}"
+
+    def _find_alpha_mattes(self, folder_path):
+        if not folder_path or not os.path.isdir(folder_path): return []
+        mat_extensions = ['.png', '.webp']; found_files = []
+        for f in os.listdir(folder_path):
+            if f.lower().endswith(tuple(mat_extensions)):
+                found_files.append(os.path.join(folder_path, f))
+        return found_files
+
+    def _apply_halftone(self, image, amount):
+        dot_size = int(np.interp(amount, [0, 100], [32, 2]))
+        img_gray = image.convert('L')
+        img_np = np.array(img_gray)
+        new_img = Image.new('RGB', image.size, 'white')
+        draw = ImageDraw.Draw(new_img)
+        for y in range(0, image.height, dot_size):
+            for x in range(0, image.width, dot_size):
+                box = img_np[y:y+dot_size, x:x+dot_size]
+                if box.size == 0: continue
+                brightness = np.mean(box)
+                dot_radius = (1 - (brightness / 255)) * (dot_size / 2)
+                cx, cy = x + dot_size/2, y + dot_size/2
+                draw.ellipse([cx-dot_radius, cy-dot_radius, cx+dot_radius, cy+dot_radius], fill='black')
+        return new_img
+
+    def generate_art(self, width, height, seed, bg_type, bg_color, compositionally_sound, alpha_matte_folder, custom_alpha_color, minimal_colors, num_shapes, shape_color_mode, custom_shapes_colors, noise_level, post_processing, post_processing_amount, primary_color, secondary_color):
+        from PIL import ImageFilter, ImageEnhance
+        random.seed(seed)
+        self.color_name_cache.clear()
+
+        image = Image.new('RGB', (width, height), color='black')
+        draw = ImageDraw.Draw(image)
+        description_parts, used_alpha_path = [], ""
+        
+        main_palette = self._generate_palette(minimal_colors, primary_color, secondary_color)
+        bg_palette = self._parse_hex_colors(bg_color)
+        if not bg_palette: bg_palette = main_palette
+
+        if bg_type == "Solid":
+            color = random.choice(bg_palette); draw.rectangle([0, 0, width, height], fill=color)
+            description_parts.append(f"a solid {self._get_color_name(color)} background")
+        elif bg_type == "Gradient":
+            c1_hex = random.choice(bg_palette)
+            if len(bg_palette) > 1: c2_hex = random.choice([c for c in bg_palette if c != c1_hex] or bg_palette)
+            else: c2_hex = self._adjust_color(c1_hex, random.choice([0.5, 1.5]))
+            c1_rgb, c2_rgb = webcolors.hex_to_rgb(c1_hex), webcolors.hex_to_rgb(c2_hex); grad_type = random.choice(['linear', 'radial', 'diamond'])
+            if grad_type == 'linear':
+                axis = random.choice(['x', 'y'])
+                if axis == 'y':
+                    for y in range(height): r, g, b = [np.interp(y, [0, height], [c1, c2]) for c1,c2 in zip(c1_rgb, c2_rgb)]; draw.line([(0, y), (width, y)], fill=(int(r), int(g), int(b)))
+                else:
+                     for x in range(width): r, g, b = [np.interp(x, [0, width], [c1, c2]) for c1,c2 in zip(c1_rgb, c2_rgb)]; draw.line([(x, 0), (x, height)], fill=(int(r), int(g), int(b)))
+            elif grad_type == 'radial':
+                center_x, center_y = random.randint(0, width), random.randint(0, height); max_radius = int(math.sqrt(max(center_x, width-center_x)**2 + max(center_y, height-center_y)**2))
+                for r_iter in range(max_radius, 0, -2): r, g, b = [np.interp(r_iter, [0, max_radius], [c2, c1]) for c1,c2 in zip(c1_rgb, c2_rgb)]; draw.ellipse([center_x-r_iter, center_y-r_iter, center_x+r_iter, center_y+r_iter], fill=(int(r), int(g), int(b)))
+            elif grad_type == 'diamond':
+                center_x, center_y = width / 2, height / 2; max_dist = int((width + height) / 2)
+                for d in range(max_dist, 0, -2): r, g, b = [np.interp(d, [0, max_dist], [c2, c1]) for c1,c2 in zip(c1_rgb, c2_rgb)]; points = [(center_x, center_y-d), (center_x+d, center_y), (center_x, center_y+d), (center_x-d, center_y)]; draw.polygon(points, fill=(int(r), int(g), int(b)))
+            description_parts.append(f"a {grad_type} gradient from {self._get_color_name(c1_hex)} to {self._get_color_name(c2_hex)}")
+        elif bg_type == "Fog":
+            c1_hex, c2_hex = random.choice(bg_palette), random.choice(bg_palette)
+            if len(bg_palette) == 1: c2_hex = self._adjust_color(c1_hex, random.choice([0.5, 1.5]))
+            c1_rgb, c2_rgb = np.array(webcolors.hex_to_rgb(c1_hex)), np.array(webcolors.hex_to_rgb(c2_hex)); noise = np.zeros((height, width))
+            for i in range(4):
+                divisor = 8 * (2**i); amp = 0.5**(i+1); low_res_w, low_res_h = int(width/divisor), int(height/divisor)
+                if low_res_w < 1 or low_res_h < 1: break
+                layer = np.random.rand(low_res_h, low_res_w); layer = cv2.resize(layer, (width, height), interpolation=cv2.INTER_CUBIC); noise += layer * amp
+            noise = (noise - noise.min()) / (noise.max() - noise.min()); noise = np.stack([noise]*3, axis=-1); fog_array = c1_rgb * (1 - noise) + c2_rgb * noise
+            image = Image.fromarray(fog_array.astype(np.uint8)); draw = ImageDraw.Draw(image)
+            description_parts.append(f"a foggy background of {self._get_color_name(c1_hex)} and {self._get_color_name(c2_hex)}")
+        
+        if compositionally_sound:
+            rule = random.choice(['focal_point', 'split'])
+            if rule == 'focal_point':
+                thirds_x, thirds_y = [width // 3, width * 2 // 3], [height // 3, height * 2 // 3]; intersections = [(tx, ty) for tx in thirds_x for ty in thirds_y]; pos_names = ["top left", "top right", "bottom left", "bottom right"]
+                idx = random.randint(0, 3); point, pos_name = intersections[idx], pos_names[idx]; focal_color_hex, radius = random.choice(main_palette), random.randint(min(width, height) // 10, min(width, height) // 5)
+                draw.ellipse([point[0]-radius, point[1]-radius, point[0]+radius, point[1]+radius], fill=focal_color_hex); brightness = "bright" if sum(webcolors.hex_to_rgb(focal_color_hex)) > 384 else "dark"
+                description_parts.append(f"with a {brightness} {self._get_color_name(focal_color_hex)} spot in the {pos_name} area")
+            elif rule == 'split':
+                fill_color_hex = random.choice(main_palette)
+                if random.random() < 0.2:
+                    split_axis = random.choice(['horizontal', 'vertical']); points = []
+                    if split_axis == 'horizontal':
+                        p1_y, p2_y = random.randint(0, height), random.randint(0, height); side = random.choice(['top', 'bottom'])
+                        if side == 'top':
+                            points = [(0, p1_y), (width, p2_y), (width, 0), (0, 0)]
+                        else:
+                            points = [(0, p1_y), (width, p2_y), (width, height), (0, height)]
+                    else:
+                        p1_x, p2_x = random.randint(0, width), random.randint(0, width); side = random.choice(['left', 'right'])
+                        if side == 'left':
+                            points = [(p1_x, 0), (p2_x, height), (0, height), (0, 0)]
+                        else:
+                            points = [(p1_x, 0), (p2_x, height), (width, height), (width, 0)]
+                    draw.polygon(points, fill=fill_color_hex); description_parts.append(f"an angled {self._get_color_name(fill_color_hex)} compositional line")
+                else:
+                    split_type = random.choice(['horizontal', 'vertical'])
+                    if split_type == 'horizontal':
+                        thirds_y = [height // 3, height * 2 // 3]; line_y = random.choice(thirds_y); desc_pos = "high" if line_y == thirds_y[0] else "low"; y_start, y_end = (0, line_y) if desc_pos == "high" else (line_y, height)
+                        draw.rectangle([0, y_start, width, y_end], fill=fill_color_hex); description_parts.append(f"a {desc_pos} {self._get_color_name(fill_color_hex)} horizon line")
+                    else:
+                        thirds_x = [width // 3, width * 2 // 3]; line_x = random.choice(thirds_x); side = "left" if random.random() > 0.5 else "right"; x_start, x_end = (0, line_x) if side == "left" else (line_x, width)
+                        draw.rectangle([x_start, 0, x_end, height], fill=fill_color_hex); description_parts.append(f"a {self._get_color_name(fill_color_hex)} section on the {side} 1/3")
+        else: description_parts.append(f"with abstract colors")
+        
+        if alpha_matte_folder and alpha_matte_folder.strip():
+            matte_files = self._find_alpha_mattes(alpha_matte_folder.strip())
+            if matte_files:
+                used_alpha_path = random.choice(matte_files)
+                try:
+                    matte_img = Image.open(used_alpha_path).convert("RGBA"); matte_img = matte_img.resize((width, height), Image.LANCZOS)
+                    clean_color = custom_alpha_color.strip()
+                    if clean_color:
+                        if not clean_color.startswith("#"): clean_color = "#" + clean_color
+                        if re.match(r'^#([0-9a-fA-F]{3}){1,2}$', clean_color):
+                            color_layer = Image.new("RGBA", (width, height), color=clean_color); alpha_mask = matte_img.getchannel('A')
+                            image.paste(color_layer, (0, 0), alpha_mask); description_parts.append(f"overlaid with a {self._get_color_name(clean_color)} matte")
+                        else: image.paste(matte_img, (0,0), matte_img); description_parts.append(f"overlaid with a matte")
+                    else: image.paste(matte_img, (0,0), matte_img); description_parts.append(f"overlaid with a matte")
+                except Exception as e: print(f"sokes_nodes.py: Could not load or process alpha matte '{os.path.basename(used_alpha_path)}': {e}"); used_alpha_path = ""
+        
+        shape_palette = [];
+        if shape_color_mode == "Neutral colors": shape_palette = ['#000000', '#FFFFFF', '#808080', '#A9A9A9', '#D3D3D3', '#2F4F4F', '#696969', '#A52A2A', '#8B4513', '#D2B48C']
+        elif shape_color_mode == "Custom colors": shape_palette = self._parse_hex_colors(custom_shapes_colors)
+        if not shape_palette and shape_color_mode != "Any color": shape_palette = main_palette
+        remaining_shapes = num_shapes
+        if remaining_shapes > 0 and random.random() < 0.1: self._draw_random_shape(image, width, height, is_giant=True, shape_color_mode=shape_color_mode, palette=shape_palette); remaining_shapes -= 1
+        for _ in range(remaining_shapes): self._draw_random_shape(image, width, height, is_giant=False, shape_color_mode=shape_color_mode, palette=shape_palette)
+        if num_shapes > 0:
+            desc_part = f"and scattered with {num_shapes} random shapes"
+            if shape_color_mode == "Neutral colors": desc_part += " in neutral tones"
+            elif shape_color_mode == "Custom colors": desc_part += " in custom colors"
+            description_parts.append(desc_part)
+        
+        if noise_level > 0:
+            np_image = np.array(image).astype(np.float32); noise_intensity = noise_level * 7.5
+            noise = np.random.normal(0, noise_intensity, np_image.shape); np_image = np.clip(np_image + noise, 0, 255).astype(np.uint8); image = Image.fromarray(np_image)
+
+        if post_processing != "None" and post_processing_amount > 0:
+            amount = post_processing_amount
+            if post_processing == "Blur":
+                blur_radius = np.interp(amount, [0, 100], [0, 20]); image = image.filter(ImageFilter.GaussianBlur(radius=blur_radius))
+            elif post_processing == "Pixelate":
+                pixel_size = int(np.interp(amount, [0, 100], [1, 64]))
+                if pixel_size > 1: img_small = image.resize((width//pixel_size, height//pixel_size), resample=Image.NEAREST); image = img_small.resize(image.size, resample=Image.NEAREST)
+            elif post_processing == "Brightness":
+                factor = np.interp(amount, [0, 100], [0.5, 1.5]); enhancer = ImageEnhance.Brightness(image); image = enhancer.enhance(factor)
+            elif post_processing == "Sharpen":
+                percent_val = int(np.interp(amount, [0,100],[100, 300])); image = image.filter(ImageFilter.UnsharpMask(radius=2, percent=percent_val, threshold=3))
+            elif post_processing == "Chromatic Aberration":
+                shift = int(np.interp(amount, [0, 100], [0, 20])); r, g, b = image.split()
+                r = r.transform(r.size, Image.AFFINE, (1, 0, shift, 0, 1, 0)); b = b.transform(b.size, Image.AFFINE, (1, 0, -shift, 0, 1, 0)); image = Image.merge("RGB", (r, g, b))
+            elif post_processing == "Vignette":
+                strength = np.interp(amount, [0, 100], [0, 1])
+                x_ax = np.linspace(-1, 1, width); y_ax = np.linspace(-1, 1, height); xx, yy = np.meshgrid(x_ax, y_ax)
+                radius = np.sqrt(xx**2 + yy**2); vignette_mask = 1 - np.clip(radius * strength, 0, 1)
+                img_np = np.array(image) * vignette_mask[:, :, np.newaxis]; image = Image.fromarray(img_np.astype(np.uint8))
+            elif post_processing == "Halftone":
+                image = self._apply_halftone(image, amount)
+            description_parts.append(f"and a {post_processing.lower()} effect")
+        
+        image_np = np.array(image).astype(np.float32) / 255.0; image_tensor = torch.from_numpy(image_np)[None,]
+        final_description = ". ".join(description_parts).capitalize() + "."
+        
+        previews_out = []
+        if preview_available:
+            preview_subfolder = "sokes_art_previews"; full_output_folder = os.path.join(self.output_dir, preview_subfolder)
+            if not os.path.exists(full_output_folder): os.makedirs(full_output_folder)
+            preview_filename = f"art_{seed}_{hashlib.sha1(final_description.encode()).hexdigest()[:6]}.png"
+            filepath = os.path.join(full_output_folder, preview_filename); image.save(filepath, compress_level=4)
+            previews_out.append({"filename": preview_filename, "subfolder": preview_subfolder, "type": self.type})
+
+        return {"ui": {"images": previews_out}, "result": (image_tensor, final_description, used_alpha_path)}
+
+    def _draw_random_shape(self, image, width, height, is_giant, shape_color_mode, palette):
+        if is_giant: shape_w, shape_h = random.randint(int(width*0.7), int(width*0.9)), random.randint(int(height*0.7), int(height*0.9))
+        else: shape_w, shape_h = random.randint(width//30, width//3), random.randint(height//30, height//3)
+        if shape_color_mode == "Any color": shape_color = f"#{random.randint(0, 0xFFFFFF):06x}"
+        else: shape_color = random.choice(palette)
+        shape_type = random.choice(['circle', 'triangle', 'rectangle', 'star', 'diamond', 'cross', 'pentagon', 'hexagon'])
+        if shape_type == 'circle':
+            x1, y1 = random.randint(-shape_w//2, width - shape_w//2), random.randint(-shape_h//2, height - shape_h//2)
+            draw = ImageDraw.Draw(image); draw.ellipse([x1, y1, x1+shape_w, y1+shape_h], fill=shape_color)
+            return
+        max_dim = int(max(shape_w, shape_h) * 1.5); temp_img = Image.new('RGBA', (max_dim, max_dim))
+        temp_draw = ImageDraw.Draw(temp_img); cx, cy = max_dim // 2, max_dim // 2
+        points = []
+        if shape_type == 'rectangle': temp_draw.rectangle([cx-shape_w//2, cy-shape_h//2, cx+shape_w//2, cy+shape_h//2], fill=shape_color)
+        elif shape_type == 'cross':
+            arm_w, arm_h = shape_w // 3, shape_h // 3
+            temp_draw.rectangle([cx-shape_w//2, cy-arm_h//2, cx+shape_w//2, cy+arm_h//2], fill=shape_color)
+            temp_draw.rectangle([cx-arm_w//2, cy-shape_h//2, cx+arm_w//2, cy+shape_h//2], fill=shape_color)
+        else:
+            if shape_type == 'triangle': points = [(cx, cy-shape_h//2), (cx-shape_w//2, cy+shape_h//2), (cx+shape_w//2, cy+shape_h//2)]
+            elif shape_type == 'diamond': points = [(cx, cy-shape_h//2), (cx+shape_w//2, cy), (cx, cy+shape_h//2), (cx-shape_w//2, cy)]
+            elif shape_type == 'pentagon':
+                for i in range(5): points.append((cx + shape_w/2 * math.cos(math.radians(i*72-90)), cy + shape_h/2 * math.sin(math.radians(i*72-90))))
+            elif shape_type == 'hexagon':
+                for i in range(6): points.append((cx + shape_w/2 * math.cos(math.radians(i*60-90)), cy + shape_h/2 * math.sin(math.radians(i*60-90))))
+            elif shape_type == 'star':
+                outer_r, inner_r = shape_w/2, shape_h/4
+                for i in range(5):
+                    points.append((cx + outer_r * math.cos(math.radians(i*72-90)), cy + outer_r * math.sin(math.radians(i*72-90))))
+                    points.append((cx + inner_r * math.cos(math.radians(i*72+36-90)), cy + inner_r * math.sin(math.radians(i*72+36-90))))
+            temp_draw.polygon(points, fill=shape_color)
+        rotated_shape = temp_img.rotate(random.randint(0, 359), expand=True, resample=Image.BICUBIC)
+        paste_x = random.randint(-rotated_shape.width//2, width - rotated_shape.width//2)
+        paste_y = random.randint(-rotated_shape.height//2, height - rotated_shape.height//2)
+        image.paste(rotated_shape, (paste_x, paste_y), rotated_shape)
+
+    @classmethod
+    def IS_CHANGED(cls, width, height, seed, bg_type, bg_color, compositionally_sound, alpha_matte_folder, custom_alpha_color, minimal_colors, num_shapes, shape_color_mode, custom_shapes_colors, noise_level, post_processing, post_processing_amount, primary_color, secondary_color):
+        params_string = f"{width}{height}{seed}{bg_type}{bg_color}{compositionally_sound}{alpha_matte_folder}{custom_alpha_color}{minimal_colors}{num_shapes}{shape_color_mode}{custom_shapes_colors}{noise_level}{post_processing}{post_processing_amount}{primary_color}{secondary_color}"
+        return hashlib.sha256(params_string.encode('utf-8')).hexdigest()
+
+# END Generate Random Background | Sokes 🦬
+##############################################################
+
+
+##############################################################
+# START Random Hex Color | Sokes 🦬
+
+class RandomHexColorSokes:
+    CATEGORY = "Sokes 🦬/Generators"
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("hex_color_string",)
+    FUNCTION = "generate_hex_colors"
+
+    COLOR_TYPES = [
+        "random", 
+        "regular", 
+        "neon", 
+        "pale", 
+        "muted", 
+        "warm colors", 
+        "cool colors", 
+        "light grays", 
+        "dark grays", 
+        "very dark grays"
+    ]
 
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "minimum": ("FLOAT", {"default": 0.0, "min": -1.0e18, "max": 1.0e18, "step": 0.01}),
-                "maximum": ("FLOAT", {"default": 1.0, "min": -1.0e18, "max": 1.0e18, "step": 0.01}),
+                "count": ("INT", {"default": 1, "min": 1, "max": 10, "step": 1}),
+                "color_type": (cls.COLOR_TYPES, {"default": "random"}),
                 "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff}),
             }
         }
 
-    def generate_random_value(self, minimum, maximum, seed):
-        min_val = min(minimum, maximum)
-        max_val = max(minimum, maximum)
+    @staticmethod
+    def _hsv_to_rgb(h, s, v):
+        """Converts HSV color space to RGB color space."""
+        if s == 0.0:
+            v_int = int(v * 255)
+            return (v_int, v_int, v_int)
+        
+        c = v * s
+        h_prime = h / 60.0
+        x = c * (1 - abs(h_prime % 2 - 1))
+        
+        r1, g1, b1 = 0.0, 0.0, 0.0
+        if 0 <= h_prime < 1: r1, g1, b1 = c, x, 0
+        elif 1 <= h_prime < 2: r1, g1, b1 = x, c, 0
+        elif 2 <= h_prime < 3: r1, g1, b1 = 0, c, x
+        elif 3 <= h_prime < 4: r1, g1, b1 = 0, x, c
+        elif 4 <= h_prime < 5: r1, g1, b1 = x, 0, c
+        elif 5 <= h_prime <= 6: r1, g1, b1 = c, 0, x
+
+        m = v - c
+        r, g, b = (r1 + m), (g1 + m), (b1 + m)
+        return (int(r * 255), int(g * 255), int(b * 255))
+
+    def _generate_one_hex(self, color_type):
+        # Generate a completely random hex color
+        if color_type in ["random", "regular"]:
+            return f"#{random.randint(0, 0xFFFFFF):06x}"
+        
+        # Generate a bright, highly saturated color
+        elif color_type == "neon":
+            h = random.uniform(0, 360)    # Hue: any color
+            s = random.uniform(0.9, 1.0)  # Saturation: high
+            v = random.uniform(0.95, 1.0) # Value/Brightness: high
+            r, g, b = self._hsv_to_rgb(h, s, v)
+            return f"#{r:02x}{g:02x}{b:02x}"
+
+        # Generate a light, desaturated color (pastel)
+        elif color_type == "pale":
+            h = random.uniform(0, 360)    # Hue: any color
+            s = random.uniform(0.1, 0.25) # Saturation: low
+            v = random.uniform(0.9, 1.0)  # Value/Brightness: high
+            r, g, b = self._hsv_to_rgb(h, s, v)
+            return f"#{r:02x}{g:02x}{b:02x}"
+            
+        # Generate a desaturated color with medium brightness
+        elif color_type == "muted":
+            h = random.uniform(0, 360)    # Hue: any color
+            s = random.uniform(0.15, 0.35)# Saturation: low-mid
+            v = random.uniform(0.4, 0.7)  # Value/Brightness: mid-range
+            r, g, b = self._hsv_to_rgb(h, s, v)
+            return f"#{r:02x}{g:02x}{b:02x}"
+
+        # Generate reds, oranges, yellows
+        elif color_type == "warm colors":
+            # Hue: -30 to 60 degrees (wraps around from magenta to yellow)
+            h = (random.uniform(-30, 60) + 360) % 360
+            s = random.uniform(0.5, 1.0) # Saturation: mid-high
+            v = random.uniform(0.5, 1.0) # Value/Brightness: mid-high
+            r, g, b = self._hsv_to_rgb(h, s, v)
+            return f"#{r:02x}{g:02x}{b:02x}"
+            
+        # Generate greens, cyans, blues
+        elif color_type == "cool colors":
+            h = random.uniform(120, 240) # Hue: from green to blue
+            s = random.uniform(0.5, 1.0) # Saturation: mid-high
+            v = random.uniform(0.5, 1.0) # Value/Brightness: mid-high
+            r, g, b = self._hsv_to_rgb(h, s, v)
+            return f"#{r:02x}{g:02x}{b:02x}"
+
+        # Generate shades of gray
+        elif color_type == "light grays":
+            gray_val = random.randint(192, 224) # C0 to E0
+            return f"#{gray_val:02x}{gray_val:02x}{gray_val:02x}"
+            
+        elif color_type == "dark grays":
+            gray_val = random.randint(64, 96) # 40 to 60
+            return f"#{gray_val:02x}{gray_val:02x}{gray_val:02x}"
+            
+        elif color_type == "very dark grays":
+            gray_val = random.randint(16, 48) # 10 to 30
+            return f"#{gray_val:02x}{gray_val:02x}{gray_val:02x}"
+        
+        # Fallback to a completely random color
+        else:
+            return f"#{random.randint(0, 0xFFFFFF):06x}"
+
+    def generate_hex_colors(self, count, color_type, seed):
         random.seed(seed)
-        primary_float = random.uniform(min_val, max_val)
-        derived_int = int(round(primary_float))
-        midpoint = min_val + (max_val - min_val) / 2.0
-        derived_bool = primary_float > midpoint
-        return (derived_int, primary_float, derived_bool)
+        hex_colors = [self._generate_one_hex(color_type) for _ in range(count)]
+        return (", ".join(hex_colors),)
 
     @classmethod
-    def IS_CHANGED(cls, minimum, maximum, seed):
-        h = hashlib.sha256()
-        # Ensure consistent string representation for hashing
-        h.update(f"min:{minimum}-max:{maximum}-seed:{seed}".encode('utf-8'))
-        return h.hexdigest()
-# END: Random Number | Sokes 🦬
+    def IS_CHANGED(cls, count, color_type, seed):
+        params_string = f"{count}-{color_type}-{seed}"
+        return hashlib.sha256(params_string.encode('utf-8')).hexdigest()
+
+# END Random Hex Color | Sokes 🦬
 ##############################################################
 
 
@@ -632,7 +914,10 @@ NODE_CLASS_MAPPINGS = {
     "Replace Text with RegEx | sokes 🦬": replace_text_regex_sokes,
     "Load Random Image | sokes 🦬": load_random_image_sokes,
     "Hex to Color Name | sokes 🦬": hex_to_color_name_sokes,
+    "Hex Color Swatch | sokes 🦬": hex_color_swatch_sokes,
     "Random Number | sokes 🦬": random_number_sokes,
+    "Generate Random Background | sokes 🦬": RandomArtGeneratorSokes,
+    "Random Hex Color | sokes 🦬": RandomHexColorSokes,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -641,5 +926,8 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "Replace Text with RegEx | sokes 🦬": "Replace Text with RegEx 🦬",
     "Load Random Image | sokes 🦬": "Load Random Image 🦬",
     "Hex to Color Name | sokes 🦬": "Hex to Color Name 🦬",
+    "Hex Color Swatch | sokes 🦬": "Hex Color Swatch 🦬",
     "Random Number | sokes 🦬": "Random Number 🦬",
+    "Generate Random Background | sokes 🦬": "Generate Random Background 🦬",
+    "Random Hex Color | sokes 🦬": "Random Hex Color 🦬",
 }
