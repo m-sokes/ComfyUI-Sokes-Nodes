@@ -325,64 +325,86 @@ class hex_to_color_name_sokes:
     CATEGORY = "Sokes 🦬"
     RETURN_TYPES = ("STRING", "STRING",); RETURN_NAMES = ("color_name", "hex",) ; FUNCTION = "execute"
     @classmethod
-    def INPUT_TYPES(cls): return { "required": { "hex_color": ("STRING", {"default": "#FFFFFF"}), }, "optional": { "use_css_name": ("BOOLEAN", {"default": False}) } }
-    
-    def execute(self, hex_color, use_css_name=False):
-        # Initial validation and processing
-        if not hex_color:
-            result_tuple = ("Input hex color is empty.", "#000000")
-            return {"ui": {"hex_color": [result_tuple[1]]}, "result": result_tuple}
-            
-        hex_color_proc = hex_color.strip().upper() # Standardize to uppercase
-        if not hex_color_proc.startswith("#"): hex_color_proc = "#" + hex_color_proc
-        if len(hex_color_proc) == 4: hex_color_proc = f"#{hex_color_proc[1]*2}{hex_color_proc[2]*2}{hex_color_proc[3]*2}"
-        
-        # Prepare the UI data packet with the processed hex
-        ui_data = {"hex_color": [hex_color_proc]}
+    def INPUT_TYPES(cls):
+        # Allow multiline for easier entry of multiple colors
+        return {
+            "required": {
+                "hex_color": ("STRING", {"default": "#FF6347, #4682B4, #32CD32", "multiline": True}),
+            },
+            "optional": {
+                "use_css_name": ("BOOLEAN", {"default": False})
+            }
+        }
 
-        if len(hex_color_proc) != 7:
-            result_tuple = (f"Invalid hex format: {hex_color}", hex_color)
-            return {"ui": {"hex_color": [hex_color]}, "result": result_tuple} # Send original back on failure
-            
+    def _find_closest_color_name(self, hex_code, use_css_name):
+        """
+        Finds the name for a single, validated 6-digit hex code.
+        Tries for an exact CSS3 match first, then finds the closest color.
+        """
         try:
-            # Find exact CSS3 name match
-            standard_name = webcolors.hex_to_name(hex_color_proc, spec="css3")
-            final_color_name = human_readable_map.get(standard_name, standard_name) if not use_css_name else standard_name
-            result_tuple = (final_color_name, hex_color_proc)
-            return {"ui": ui_data, "result": result_tuple}
+            standard_name = webcolors.hex_to_name(hex_code, spec="css3")
+            return human_readable_map.get(standard_name, standard_name) if not use_css_name else standard_name
         except ValueError:
-            # If no exact match, find the closest color
             try:
-                requested_rgb_clamped = tuple(max(0, min(255, c)) for c in webcolors.hex_to_rgb(hex_color_proc))
-                requested_lab = convert_color(sRGBColor(*requested_rgb_clamped, is_upscaled=True), LabColor)
-            except Exception as e:
-                result_tuple = (f"Invalid input hex '{hex_color_proc}'", hex_color_proc)
-                return {"ui": ui_data, "result": result_tuple}
-                
-            min_dist = float('inf'); closest_name_internal = None
-            # Search explicit targets first, then all CSS3 colors
+                requested_rgb = webcolors.hex_to_rgb(hex_code)
+                requested_lab = convert_color(sRGBColor(*requested_rgb, is_upscaled=True), LabColor)
+            except Exception:
+                return "Invalid"
+            
+            min_dist = float('inf')
+            closest_name_internal = None
+            
             for source_map in [explicit_targets_for_comparison, css3_names_to_hex]:
                 for name_key, hex_val_orig in source_map.items():
-                    # Normalize candidate hex for comparison
-                    current_hex_cand = hex_val_orig.strip()
-                    if not current_hex_cand.startswith("#"): current_hex_cand = "#" + current_hex_cand
-                    if len(current_hex_cand) == 4: current_hex_cand = f"#{current_hex_cand[1]*2}{current_hex_cand[2]*2}{current_hex_cand[3]*2}"
-                    if len(current_hex_cand) != 7: continue
                     try:
-                        cand_rgb_clamped = tuple(max(0, min(255, c)) for c in webcolors.hex_to_rgb(current_hex_cand))
-                        cand_lab = convert_color(sRGBColor(*cand_rgb_clamped, is_upscaled=True), LabColor)
-                        d = delta_e_cie2000(requested_lab, cand_lab)
-                        if d < min_dist: min_dist = d; closest_name_internal = name_key 
-                    except Exception: pass 
+                        cand_rgb = webcolors.hex_to_rgb(hex_val_orig)
+                        cand_lab = convert_color(sRGBColor(*cand_rgb, is_upscaled=True), LabColor)
+                        dist = delta_e_cie2000(requested_lab, cand_lab)
+                        if dist < min_dist:
+                            min_dist, closest_name_internal = dist, name_key
+                    except Exception:
+                        continue
             
-            if closest_name_internal is None:
-                result_tuple = ("Could not find any closest color match.", hex_color_proc)
+            if closest_name_internal:
+                return human_readable_map.get(closest_name_internal, closest_name_internal) if not use_css_name else closest_name_internal
             else:
-                final_color_name = human_readable_map.get(closest_name_internal, closest_name_internal) if not use_css_name else closest_name_internal
-                result_tuple = (final_color_name, hex_color_proc)
+                return "Unknown"
+
+    def execute(self, hex_color, use_css_name=False):
+        if not hex_color or not hex_color.strip():
+            # Return empty results and an empty UI packet if input is blank
+            return {"ui": {"hex_color": []}, "result": ("", "")}
+
+        color_strings = [c.strip() for c in hex_color.split(',') if c.strip()]
+        
+        found_names = []
+        validated_hexes = []
+
+        # Process up to 10 colors to avoid excessive processing
+        for color_str in color_strings[:10]:
+            hex_proc = color_str.upper()
+            if not hex_proc.startswith("#"):
+                hex_proc = "#" + hex_proc
             
-            # *** FIX: Return the dictionary format here as well ***
-            return {"ui": ui_data, "result": result_tuple}
+            if len(hex_proc) == 4:
+                hex_proc = f"#{hex_proc[1]*2}{hex_proc[2]*2}{hex_proc[3]*2}"
+            
+            if not re.match(r'^#[0-9A-F]{6}$', hex_proc):
+                # Silently skip invalid formats
+                continue
+
+            validated_hexes.append(hex_proc)
+            name = self._find_closest_color_name(hex_proc, use_css_name)
+            found_names.append(name)
+
+        final_names_str = ", ".join(found_names)
+        final_hexes_str = ", ".join(validated_hexes)
+        
+        # The UI packet contains the list of validated hexes. The JS will use this.
+        ui_data = {"hex_color": validated_hexes}
+        result_tuple = (final_names_str, final_hexes_str)
+        
+        return {"ui": ui_data, "result": result_tuple}
 
 # END Hex to Color Name | Sokes 🦬
 ##############################################################
@@ -797,15 +819,32 @@ class RandomHexColorSokes:
 
     COLOR_TYPES = [
         "random", 
-        "regular", 
+        "normal",
         "neon", 
         "pale", 
-        "muted", 
+        "muted",
+        "dark colors",
         "warm colors", 
-        "cool colors", 
+        "cool colors",
+        "tan colors",
         "light grays", 
         "dark grays", 
-        "very dark grays"
+        "very dark grays",
+        "all grays"
+    ]
+    
+    NORMAL_COLORS = [
+        '#FF0000',  # Red
+        '#00FF00',  # Green
+        '#0000FF',  # Blue
+        '#FFFF00',  # Yellow
+        '#FFA500',  # Orange
+        '#800080',  # Purple
+        '#FFC0CB',  # Pink
+        '#A52A2A',  # Brown
+        '#FFFFFF',  # White
+        '#000000',  # Black
+        '#808080',  # Gray
     ]
 
     @classmethod
@@ -818,7 +857,6 @@ class RandomHexColorSokes:
             }
         }
 
-    # ... (The _hsv_to_rgb helper method remains unchanged) ...
     @staticmethod
     def _hsv_to_rgb(h, s, v):
         """Converts HSV color space to RGB color space."""
@@ -843,52 +881,68 @@ class RandomHexColorSokes:
         return (int(r * 255), int(g * 255), int(b * 255))
 
     def _generate_one_hex(self, color_type):
-        # Generate a completely random hex color
-        if color_type in ["random", "regular"]:
+        if color_type == "random":
             return f"#{random.randint(0, 0xFFFFFF):06x}"
         
-        # Generate a bright, highly saturated color
+        elif color_type == "normal":
+            return random.choice(self.NORMAL_COLORS)
+        
         elif color_type == "neon":
-            h = random.uniform(0, 360)    # Hue: any color
-            s = random.uniform(0.9, 1.0)  # Saturation: high
-            v = random.uniform(0.95, 1.0) # Value/Brightness: high
+            h = random.uniform(0, 360)
+            s = random.uniform(0.9, 1.0)
+            v = random.uniform(0.95, 1.0)
             r, g, b = self._hsv_to_rgb(h, s, v)
             return f"#{r:02x}{g:02x}{b:02x}"
 
-        # Generate a light, desaturated color (pastel)
         elif color_type == "pale":
-            h = random.uniform(0, 360)    # Hue: any color
-            s = random.uniform(0.1, 0.25) # Saturation: low
-            v = random.uniform(0.9, 1.0)  # Value/Brightness: high
+            h = random.uniform(0, 360)
+            s = random.uniform(0.1, 0.25)
+            v = random.uniform(0.9, 1.0)
             r, g, b = self._hsv_to_rgb(h, s, v)
             return f"#{r:02x}{g:02x}{b:02x}"
             
-        # Generate a desaturated color with medium brightness
         elif color_type == "muted":
-            h = random.uniform(0, 360)    # Hue: any color
-            s = random.uniform(0.15, 0.35)# Saturation: low-mid
-            v = random.uniform(0.4, 0.7)  # Value/Brightness: mid-range
+            h = random.uniform(0, 360)
+            s = random.uniform(0.15, 0.35)
+            v = random.uniform(0.4, 0.7)
             r, g, b = self._hsv_to_rgb(h, s, v)
             return f"#{r:02x}{g:02x}{b:02x}"
 
-        # Generate reds, oranges, yellows
+        elif color_type == "dark colors":
+            h = random.uniform(0, 360)
+            s = random.uniform(0.7, 1.0)
+            v = random.uniform(0.07, 0.4)
+            r, g, b = self._hsv_to_rgb(h, s, v)
+            return f"#{r:02x}{g:02x}{b:02x}"
+
         elif color_type == "warm colors":
-            # Hue: -30 to 60 degrees (wraps around from magenta to yellow)
-            h = (random.uniform(-30, 60) + 360) % 360
-            s = random.uniform(0.5, 1.0) # Saturation: mid-high
-            v = random.uniform(0.5, 1.0) # Value/Brightness: mid-high
+            h = (random.uniform(-81, 59) + 360) % 360
+                # 0-59 and 279 to 360
+
+                # OLD below
+                #(random.uniform(-30, 14) + 360) % 360
+                # (56 + 360) % 360 → 14
+                # (-30 + 360) % 360 → 330
+            s = random.uniform(0.65, 1.0)
+            v = random.uniform(0.5, 1.0)
             r, g, b = self._hsv_to_rgb(h, s, v)
             return f"#{r:02x}{g:02x}{b:02x}"
             
-        # Generate greens, cyans, blues
         elif color_type == "cool colors":
-            h = random.uniform(120, 240) # Hue: from green to blue
-            s = random.uniform(0.5, 1.0) # Saturation: mid-high
-            v = random.uniform(0.5, 1.0) # Value/Brightness: mid-high
+            h = random.uniform(120, 240)
+            s = random.uniform(0.5, 1.0)
+            v = random.uniform(0.5, 1.0)
             r, g, b = self._hsv_to_rgb(h, s, v)
             return f"#{r:02x}{g:02x}{b:02x}"
 
-        # Generate shades of gray
+        # Generate tans, creams, and light browns
+        elif color_type == "tan colors":
+            h = random.uniform(36, 50)     # Hue: yellow-orange range
+            s = random.uniform(0.02, 0.16)  # Saturation: low for a washed-out, natural look
+            v = random.uniform(0.8, 1.0)  # Value/Brightness: high for light colors
+            r, g, b = self._hsv_to_rgb(h, s, v)
+            return f"#{r:02x}{g:02x}{b:02x}"
+
         elif color_type == "light grays":
             gray_val = random.randint(192, 224) # C0 to E0
             return f"#{gray_val:02x}{gray_val:02x}{gray_val:02x}"
@@ -900,8 +954,11 @@ class RandomHexColorSokes:
         elif color_type == "very dark grays":
             gray_val = random.randint(16, 48) # 10 to 30
             return f"#{gray_val:02x}{gray_val:02x}{gray_val:02x}"
+
+        elif color_type == "all grays":
+            gray_val = random.randint(0, 255) # 10 to 30
+            return f"#{gray_val:02x}{gray_val:02x}{gray_val:02x}"
         
-        # Fallback to a completely random color
         else:
             return f"#{random.randint(0, 0xFFFFFF):06x}"
 
@@ -910,7 +967,6 @@ class RandomHexColorSokes:
         hex_colors = [self._generate_one_hex(color_type).upper() for _ in range(count)]
         final_string = ", ".join(hex_colors)
         
-        # Return a dictionary to send the generated string to the UI
         return {
             "ui": {"hex_color_string": [final_string]},
             "result": (final_string,)
