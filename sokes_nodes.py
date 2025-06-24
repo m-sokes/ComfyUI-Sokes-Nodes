@@ -381,6 +381,7 @@ class hex_to_color_name_sokes:
                 final_color_name = human_readable_map.get(closest_name_internal, closest_name_internal) if not use_css_name else closest_name_internal
                 result_tuple = (final_color_name, hex_color_proc)
             
+            # *** FIX: Return the dictionary format here as well ***
             return {"ui": ui_data, "result": result_tuple}
 
 # END Hex to Color Name | Sokes 🦬
@@ -478,7 +479,8 @@ class RandomArtGeneratorSokes:
                 "width": ("INT", {"default": 512, "min": 64, "max": 4096, "step": 8}),
                 "height": ("INT", {"default": 512, "min": 64, "max": 4096, "step": 8}),
                 "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff}),
-                "bg_type": (["Solid", "Gradient", "Fog"],),
+                # "Random" is now the first item, making it the default
+                "bg_type": (["Random", "Solid", "Gradient", "Fog"],),
                 "bg_color": ("STRING", {"default": "", "multiline": False, "placeholder": "e.g., #ff0000, 00ff00"}),
                 "compositionally_sound": ("BOOLEAN", {"default": True}),
                 "alpha_matte_folder": ("STRING", {"default": "", "multiline": False, "placeholder": "Path to folder with PNG/WEBP mattes"}),
@@ -488,7 +490,8 @@ class RandomArtGeneratorSokes:
                 "shape_color_mode": (["Any color", "Neutral colors", "Custom colors"],),
                 "custom_shapes_colors": ("STRING", {"default": "#FF00FF, #552288, 993322", "multiline": False}),
                 "noise_level": ("INT", {"default": 0, "min": 0, "max": 10, "step": 1}),
-                "post_processing": (["None", "Blur", "Pixelate", "Brightness", "Sharpen", "Vignette", "Chromatic Aberration", "Halftone"],),
+                # "Random" is now the first item, making it the default
+                "post_processing": (["Random", "None", "Blur", "Pixelate", "Brightness", "Sharpen", "Vignette", "Chromatic Aberration", "Halftone"],),
                 "post_processing_amount": ("INT", {"default": 0, "min": 0, "max": 100, "step": 1}),
                 "primary_color": ("STRING", {"default": "#000000", "placeholder": "Leave blank for random"}),
                 "secondary_color": ("STRING", {"default": "#FFFFFF", "placeholder": "Leave blank for random"}),
@@ -496,6 +499,7 @@ class RandomArtGeneratorSokes:
             "optional": {}
         }
 
+    # ... (the _get_color_name, _generate_palette, and other helper methods remain unchanged) ...
     def _get_color_name(self, hex_color):
         if hex_color in self.color_name_cache: return self.color_name_cache[hex_color]
         if not hex_color or not re.match(r'^#[0-9a-fA-F]{6}$', hex_color): return "unknown color"
@@ -579,6 +583,7 @@ class RandomArtGeneratorSokes:
                 draw.ellipse([cx-dot_radius, cy-dot_radius, cx+dot_radius, cy+dot_radius], fill='black')
         return new_img
 
+
     def generate_art(self, width, height, seed, bg_type, bg_color, compositionally_sound, alpha_matte_folder, custom_alpha_color, minimal_colors, num_shapes, shape_color_mode, custom_shapes_colors, noise_level, post_processing, post_processing_amount, primary_color, secondary_color):
         from PIL import ImageFilter, ImageEnhance
         random.seed(seed)
@@ -591,6 +596,10 @@ class RandomArtGeneratorSokes:
         main_palette = self._generate_palette(minimal_colors, primary_color, secondary_color)
         bg_palette = self._parse_hex_colors(bg_color)
         if not bg_palette: bg_palette = main_palette
+
+        # --- Handle "Random" bg_type ---
+        if bg_type == "Random":
+            bg_type = random.choice(["Solid", "Gradient", "Fog"])
 
         if bg_type == "Solid":
             color = random.choice(bg_palette); draw.rectangle([0, 0, width, height], fill=color)
@@ -691,6 +700,10 @@ class RandomArtGeneratorSokes:
         if noise_level > 0:
             np_image = np.array(image).astype(np.float32); noise_intensity = noise_level * 7.5
             noise = np.random.normal(0, noise_intensity, np_image.shape); np_image = np.clip(np_image + noise, 0, 255).astype(np.uint8); image = Image.fromarray(np_image)
+
+        # --- Handle "Random" post_processing ---
+        if post_processing == "Random":
+            post_processing = random.choice(["None", "Blur", "Pixelate", "Brightness", "Sharpen", "Vignette", "Chromatic Aberration", "Halftone"])
 
         if post_processing != "None" and post_processing_amount > 0:
             amount = post_processing_amount
@@ -805,6 +818,7 @@ class RandomHexColorSokes:
             }
         }
 
+    # ... (The _hsv_to_rgb helper method remains unchanged) ...
     @staticmethod
     def _hsv_to_rgb(h, s, v):
         """Converts HSV color space to RGB color space."""
@@ -893,8 +907,14 @@ class RandomHexColorSokes:
 
     def generate_hex_colors(self, count, color_type, seed):
         random.seed(seed)
-        hex_colors = [self._generate_one_hex(color_type) for _ in range(count)]
-        return (", ".join(hex_colors),)
+        hex_colors = [self._generate_one_hex(color_type).upper() for _ in range(count)]
+        final_string = ", ".join(hex_colors)
+        
+        # Return a dictionary to send the generated string to the UI
+        return {
+            "ui": {"hex_color_string": [final_string]},
+            "result": (final_string,)
+        }
 
     @classmethod
     def IS_CHANGED(cls, count, color_type, seed):
