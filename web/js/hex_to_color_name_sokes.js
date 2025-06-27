@@ -1,8 +1,146 @@
+// --- File: hex_to_color_name_sokes.js ---
+
 import { app } from "../../scripts/app.js";
+import { api } from "../../scripts/api.js";
+
 
 app.registerExtension({
     name: "sokes.ColorWidgets",
     async beforeRegisterNodeDef(nodeType, nodeData, app) {
+
+        // ###############################################################
+        // START Image Picker - WEB JAVASCRIPT (FINAL, ROBUST FIX)
+        // ###############################################################
+        if (nodeData.name === "Image Picker | sokes 🦬") {
+            const onNodeCreated = nodeType.prototype.onNodeCreated;
+            nodeType.prototype.onNodeCreated = function () {
+                onNodeCreated?.apply(this, arguments);
+
+                // --- 1. STATE & WIDGETS ---
+                // We store the image list and index on the node itself.
+                this.imageList = [];
+                this.currentIndex = -1;
+
+                // Get references to the widgets defined in Python.
+                const folderPathWidget = this.widgets.find(w => w.name === "folder_path");
+                const currentImageWidget = this.widgets.find(w => w.name === "current_image");
+                const alwaysPickLastWidget = this.widgets.find(w => w.name === "always_pick_last");
+                
+                // --- 2. UI ELEMENTS ---
+                // Create all the HTML elements for the previewer.
+                const container = document.createElement("div");
+                const previewImage = document.createElement("img");
+                const navContainer = document.createElement("div");
+                const prevButton = document.createElement("button"); prevButton.textContent = "◀";
+                const nextButton = document.createElement("button"); nextButton.textContent = "▶";
+                const lastButton = document.createElement("button"); lastButton.textContent = "⏭";
+                const imageNameLabel = document.createElement("span");
+                const buttonGroup = document.createElement("div");
+                
+                // Style and assemble them.
+                Object.assign(container.style, { position: "relative", width: "100%", height: "100%" });
+                Object.assign(previewImage.style, { width: "100%", height: "calc(100% - 38px)", objectFit: "contain" });
+                Object.assign(navContainer.style, { position: "absolute", bottom: "0", left: "0", width: "100%", padding: "5px", boxSizing: "border-box", display: "flex", justifyContent: "space-between", alignItems: "center" });
+                Object.assign(imageNameLabel.style, { textAlign: "left", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontSize: "12px", color: "#ccc", flexGrow: "1" });
+                Object.assign(buttonGroup.style, { display: "flex", gap: "5px" });
+                
+                buttonGroup.append(prevButton, nextButton, lastButton);
+                navContainer.append(imageNameLabel, buttonGroup);
+                container.append(previewImage, navContainer);
+                this.addDOMWidget("image_picker_widget", "div", container, { serialize: false });
+
+                // --- 3. CORE LOGIC FUNCTIONS ---
+                // These functions are defined here so they are available to all event handlers.
+
+                const updatePreview = () => {
+                    if (this.imageList.length === 0 || this.currentIndex < 0) {
+                        previewImage.src = ""; imageNameLabel.textContent = "No images found"; currentImageWidget.value = ""; return;
+                    }
+                    this.currentIndex = Math.max(0, Math.min(this.imageList.length - 1, this.currentIndex));
+                    const imageData = this.imageList[this.currentIndex];
+                    const url = api.apiURL(`/view?filename=${encodeURIComponent(imageData.filename)}&subfolder=${encodeURIComponent(imageData.subfolder)}&type=${imageData.type}&t=${+new Date()}`);
+                    previewImage.src = url;
+                    imageNameLabel.textContent = `(${this.currentIndex + 1}/${this.imageList.length}) ${imageData.filename}`;
+                    currentImageWidget.value = imageData.full_path;
+                };
+                
+                const goToLastImage = () => {
+                    if (this.imageList.length > 0) {
+                        this.currentIndex = this.imageList.length - 1;
+                        updatePreview();
+                    }
+                };
+                
+                const fetchImageList = async () => {
+                    const path = folderPathWidget.value;
+                    if (!path) { this.imageList = []; this.currentIndex = -1; updatePreview(); return; }
+                    try {
+                        const response = await api.fetchApi(`/sokes/get_image_list?folder_path=${encodeURIComponent(path)}`);
+                        this.imageList = await response.json();
+                        // After fetching, determine the correct image to show.
+                        if (alwaysPickLastWidget.value) {
+                            goToLastImage();
+                        } else {
+                            const savedIndex = this.imageList.findIndex(img => img.full_path === currentImageWidget.value);
+                            this.currentIndex = savedIndex !== -1 ? savedIndex : (this.imageList.length > 0 ? 0 : -1);
+                            updatePreview();
+                        }
+                    } catch (e) {
+                        console.error("Failed to fetch image list:", e);
+                        this.imageList = []; this.currentIndex = -1; updatePreview();
+                    }
+                };
+
+                // --- 4. WIRING THE EVENTS ---
+                // This is the most important section.
+
+                prevButton.onclick = () => { if (this.imageList.length > 1) { this.currentIndex--; updatePreview(); }};
+                nextButton.onclick = () => { if (this.imageList.length > 1) { this.currentIndex++; updatePreview(); }};
+                lastButton.onclick = goToLastImage; // The button works, so this function is correct.
+
+                folderPathWidget.callback = fetchImageList;
+                
+                // *** THE DEFINITIVE FIX IS HERE ***
+                // We are REPLACING the default callback of the toggle widget with our own.
+                // This function will now run every single time the toggle is clicked.
+                alwaysPickLastWidget.callback = (value) => {
+                    // Update the UI styling immediately.
+                    folderPathWidget.inputEl.disabled = value;
+                    buttonGroup.style.display = value ? "none" : "flex";
+
+                    // If the toggle was just turned ON...
+                    if (value) {
+                        // ...call the exact same function that the 'last' button uses.
+                        // This makes the behavior identical and instant.
+                        goToLastImage();
+                    }
+                    // We don't need an 'else' block, because when turning it off,
+                    // the user expects the image to just stay where it is.
+                };
+
+                // --- 5. INITIALIZATION ---
+                // On first load, fetch the images and then make sure the UI reflects
+                // the initial state of the toggle (which could be ON from a saved workflow).
+                setTimeout(() => {
+                    fetchImageList().then(() => {
+                        // Manually trigger the callback to set the initial UI state
+                        alwaysPickLastWidget.callback(alwaysPickLastWidget.value);
+                    });
+                }, 100);
+            };
+
+            const onComputeSize = nodeType.prototype.computeSize;
+            nodeType.prototype.computeSize = function(out) {
+                const size = onComputeSize.apply(this, arguments);
+                size[0] = Math.max(300, size[0]);
+                size[1] = (size[1] || 0) + 256; 
+                return size;
+            };
+        }
+        // ###############################################################
+        // END Image Picker - WEB JAVASCRIPT
+        // ###############################################################
+
 
         // ###############################################################
         // START Hex Color Swatch - WEB JAVASCRIPT
@@ -10,31 +148,18 @@ app.registerExtension({
         //
         if (nodeData.name === "Hex Color Swatch | sokes 🦬") {
 
-            // --- Define swatch appearance and layout constants ---
             const SWATCH_WIDTH = 80;
             const SWATCH_HEIGHT = 32;
             const GAP = 4;
             const MARGIN = 10;
-            const START_Y = 50; // Vertical start position for the swatches grid
+            const START_Y = 50;
 
-            /**
-             * Draws a single swatch with a text label at a specific x,y coordinate.
-             * @param {CanvasRenderingContext2D} ctx The canvas context.
-             * @param {string} hex The hex color string.
-             * @param {number} x The x coordinate to start drawing.
-             * @param {number} y The y coordinate to start drawing.
-             */
             const drawSwatch = (ctx, hex, x, y) => {
                 let color = /^#([0-9A-F]{3}){1,2}$/.test(hex) ? hex : "#000000";
 
-                // Draw the swatch background
                 ctx.fillStyle = color;
                 ctx.fillRect(x, y, SWATCH_WIDTH, SWATCH_HEIGHT);
-                //ctx.strokeStyle = "#000000";
-                //ctx.lineWidth = 1;
-                //ctx.strokeRect(x, y, SWATCH_WIDTH, SWATCH_HEIGHT);
-
-                // Draw the text label
+                
                 try {
                     const rgb = parseInt(color.slice(1), 16);
                     const luma = 0.2126 * ((rgb >> 16) & 0xff) + 0.7156 * ((rgb >> 8) & 0xff) + 0.0722 * (rgb & 0xff);
@@ -53,56 +178,44 @@ app.registerExtension({
             nodeType.prototype.onNodeCreated = function () {
                 onNodeCreated?.apply(this, arguments);
 
-                // This widget stores the array of hex values. It has no visible element.
                 const internalWidget = this.addCustomWidget({
                     name: "swatch_values_widget",
                     type: "customtext",
-                    value: [], // Will hold an array of hex strings
+                    value: [],
                     draw: () => {},
                 });
 
                 const hexInputWidget = this.widgets.find(w => w.name === "hex");
 
-                // Function to parse the text input and update the internal values
                 const updateValues = (text) => {
-                    const hexes = (text || "").split(',')
-                        .map(c => c.trim().toUpperCase())
-                        .filter(Boolean);
+                    const hexes = (text || "").split(',').map(c => c.trim().toUpperCase()).filter(Boolean);
                     internalWidget.value = hexes;
-                    this.setDirtyCanvas(true, true); // Force redraw and resize
+                    this.setDirtyCanvas(true, true);
                 };
 
-                // Hook into onExecuted to get updates from the Python backend
                 this.onExecuted = (message) => {
                     if (message?.hex) {
                         const validatedHexes = message.hex || [];
                         internalWidget.value = validatedHexes;
                         
-                        // *** ADDED THIS BLOCK TO UPDATE THE TEXT INPUT ***
                         const hexInputWidget = this.widgets.find(w => w.name === "hex");
                         if (hexInputWidget) {
-                            // Convert the validated array back into a clean string and update the widget
                             hexInputWidget.value = validatedHexes.join(", ");
                         }
-                        // ************************************************
-
                         this.setDirtyCanvas(true, true);
                     }
                 };
 
-                // Hijack the text input's callback to update on user input
                 if (hexInputWidget) {
                     const originalCallback = hexInputWidget.callback;
                     hexInputWidget.callback = (value) => {
                         updateValues(value);
                         return originalCallback?.apply(this, arguments);
                     };
-                    // Initial parse on node creation
                     setTimeout(() => updateValues(hexInputWidget.value), 0);
                 }
             };
 
-            // Use onDrawForeground to draw all the swatches in a grid
             const onDrawForeground = nodeType.prototype.onDrawForeground;
             nodeType.prototype.onDrawForeground = function(ctx) {
                 onDrawForeground?.apply(this, arguments);
@@ -110,9 +223,7 @@ app.registerExtension({
                 const widget = this.widgets.find((w) => w.name === "swatch_values_widget");
                 const hexValues = widget?.value;
 
-                if (!hexValues || hexValues.length === 0 || this.flags.collapsed) {
-                    return;
-                }
+                if (!hexValues || hexValues.length === 0 || this.flags.collapsed) return;
 
                 const availableWidth = this.size[0] - (2 * MARGIN);
                 const swatchesPerRow = Math.max(1, Math.floor(availableWidth / (SWATCH_WIDTH + GAP)));
@@ -126,17 +237,14 @@ app.registerExtension({
                 });
             };
 
-            // Dynamically compute the node's height based on how many rows of swatches are needed
             const onComputeSize = nodeType.prototype.computeSize;
             nodeType.prototype.computeSize = function(out) {
                 const size = onComputeSize.apply(this, arguments);
                 const hexValues = this.widgets.find(w => w.name === "swatch_values_widget")?.value || [];
 
-                if (hexValues.length === 0) {
-                    return size;
-                }
+                if (hexValues.length === 0) return size;
                 
-                size[0] = Math.max(size[0], 240); // Ensure a minimum width
+                size[0] = Math.max(size[0], 240);
 
                 const availableWidth = size[0] - (2 * MARGIN);
                 const swatchesPerRow = Math.max(1, Math.floor(availableWidth / (SWATCH_WIDTH + GAP)));
@@ -154,106 +262,75 @@ app.registerExtension({
         // ###############################################################
 
         
-                // ###############################################################
+        // ###############################################################
         // START Random Hex Color - WEB JAVASCRIPT
-        // Adds an interactive color picker swatch for a single color,
-        // or a multi-color swatch display for multiple colors.
+        // Adds an interactive color picker swatch for a single color, or multi-color swatch.
         //
         if (nodeData.name === "Random Hex Color | sokes 🦬") {
             const onNodeCreated = nodeType.prototype.onNodeCreated;
             nodeType.prototype.onNodeCreated = function () {
                 onNodeCreated?.apply(this, arguments);
 
-                // --- Create the main container for the swatches ---
                 const swatchContainer = document.createElement("div");
                 Object.assign(swatchContainer.style, {
                     width: "100%",
                     height: "20px",
                     borderRadius: "4px",
-                    //border: "1px solid #222", // A subtle border for definition
                     boxSizing: "border-box",
-                    display: "flex", // Use flexbox for layout
-                    //gap: "1px", // The 1px gap between colors
-                    overflow: "hidden", // This is key for the rounded corners on the children
-                    cursor: "pointer", // Default to pointer, will be changed if > 1 color
+                    display: "flex",
+                    overflow: "hidden",
+                    cursor: "pointer",
                 });
                 
-                // Create the hidden color input for the picker (only used for a single color)
                 const colorInput = document.createElement("input");
                 colorInput.type = "color";
                 
-                // Click handler for the container
                 const onSwatchClick = () => colorInput.click();
                 swatchContainer.addEventListener("click", onSwatchClick);
 
-                // Function to update the display based on the hex string
                 const updateDisplay = (hexString) => {
-                    const hexes = (hexString || "").split(',')
-                        .map(c => c.trim().toUpperCase())
-                        .filter(c => /^#([0-9A-F]{3}){1,2}$/.test(c));
-
-                    // Clear previous swatches
+                    const hexes = (hexString || "").split(',').map(c => c.trim().toUpperCase()).filter(c => /^#([0-9A-F]{3}){1,2}$/.test(c));
                     swatchContainer.innerHTML = "";
 
                     if (hexes.length <= 1) {
-                        // --- SINGLE COLOR OR EMPTY ---
                         const firstHex = hexes[0] || "#000000";
                         swatchContainer.style.backgroundColor = firstHex;
                         swatchContainer.style.cursor = "pointer";
-                        swatchContainer.addEventListener("click", onSwatchClick); // Ensure listener is attached
-                        
-                        // Sync the hidden color picker
+                        swatchContainer.addEventListener("click", onSwatchClick);
                         colorInput.value = firstHex;
-
                     } else {
-                        // --- MULTIPLE COLORS ---
-                        swatchContainer.style.backgroundColor = "transparent"; // Let node background show in gaps
+                        swatchContainer.style.backgroundColor = "transparent";
                         swatchContainer.style.cursor = "default";
-                        swatchContainer.removeEventListener("click", onSwatchClick); // Disable picker for multiple colors
+                        swatchContainer.removeEventListener("click", onSwatchClick);
 
                         hexes.forEach(hex => {
                             const block = document.createElement("div");
-                            Object.assign(block.style, {
-                                flex: "1", // Each block takes up equal space
-                                height: "100%",
-                                backgroundColor: hex,
-                            });
+                            Object.assign(block.style, { flex: "1", height: "100%", backgroundColor: hex });
                             swatchContainer.appendChild(block);
                         });
                     }
                 };
 
-                // When the user picks a color, it should ONLY update if there's one color displayed
                 colorInput.addEventListener("input", (e) => {
-                    // This interaction is only meaningful if we are in single-color mode.
-                    // When a color is picked, it replaces whatever was in the output.
                     const newColor = e.target.value.toUpperCase();
                     updateDisplay(newColor);
                 });
 
-                // Add the swatch container to the node
                 this.addDOMWidget("random_color_display", "div", swatchContainer, { serialize: false });
                 
-                // Hook into onExecuted to get the generated color(s) from Python
                 const onExecuted = this.onExecuted;
                 this.onExecuted = function(message) {
                     onExecuted?.apply(this, arguments);
-                    
-                    // Key "hex_color_string" matches the Python RETURN_NAMES
-                    if (message?.hex_color_string && message.hex_color_string.length > 0) {
-                        const generatedString = message.hex_color_string[0];
-                        updateDisplay(generatedString); // Update the display with the new value(s)
+                    if (message?.hex_color_string?.[0]) {
+                        updateDisplay(message.hex_color_string[0]);
                     }
                 };
             };
 
-            // Ensure the node has enough height for the widgets
             const onComputeSize = nodeType.prototype.computeSize;
             nodeType.prototype.computeSize = function(out) {
                 const size = onComputeSize.apply(this, arguments);
-                if (size) {
-                    size[1] = Math.max(size[1], 100);
-                }
+                if (size) size[1] = Math.max(size[1], 100);
                 return size;
             };
         }
@@ -262,7 +339,7 @@ app.registerExtension({
         // ###############################################################
 
 
-                // ###############################################################
+        // ###############################################################
         // START Hex to Color Name - WEB JAVASCRIPT
         // Adds an interactive color picker swatch.
         //
@@ -273,9 +350,7 @@ app.registerExtension({
 
                 const hexWidget = this.widgets.find(w => w.name === "hex_color");
                 
-                // Create the visible swatch div
                 const swatch = document.createElement("div");
-                swatch.className = "sokes-color-picker-swatch";
                 Object.assign(swatch.style, {
                     width: "100%",
                     height: "20px",
@@ -285,74 +360,54 @@ app.registerExtension({
                     boxSizing: "border-box",
                 });
                 
-                // Create the hidden color input
                 const colorInput = document.createElement("input");
                 colorInput.type = "color";
                 
-                // When swatch is clicked, trigger the hidden color input
                 swatch.addEventListener("click", () => colorInput.click());
 
-                // When a new color is selected from the picker, it REPLACES the text input
                 colorInput.addEventListener("input", (e) => {
                     const newColor = e.target.value.toUpperCase();
                     if (hexWidget) {
-                        hexWidget.value = newColor; // Update the node's text input
-                        swatch.style.backgroundColor = newColor; // Update the swatch itself
-                        if (hexWidget.callback) {
-                             hexWidget.callback(newColor);
-                        }
+                        hexWidget.value = newColor;
+                        swatch.style.backgroundColor = newColor;
+                        hexWidget.callback?.(newColor);
                     }
                 });
 
-                // Function to sync swatch color from the text widget.
-                // It now takes the first color from a comma-separated list.
                 const syncSwatchFromWidget = (value) => {
-                    // Take the first item from a potential comma-separated list
                     let firstHex = (value || "").split(',')[0].trim().toUpperCase();
                     if (!firstHex) {
-                        swatch.style.backgroundColor = "#000000"; // Default for empty
+                        swatch.style.backgroundColor = "#000000";
                         return;
                     }
-
                     if (!firstHex.startsWith("#")) firstHex = "#" + firstHex;
 
-                    // Validate the extracted hex code before applying
                     if (/^#([0-9A-Fa-f]{3}){1,2}$/.test(firstHex)) {
                         swatch.style.backgroundColor = firstHex;
-                        // Also update the hidden color picker's value to match
                         colorInput.value = firstHex.length === 4 ? `#${firstHex[1]}${firstHex[1]}${firstHex[2]}${firstHex[2]}${firstHex[3]}${firstHex[3]}` : firstHex;
                     } else {
-                        swatch.style.backgroundColor = "#000000"; // Default for invalid
+                        swatch.style.backgroundColor = "#000000";
                     }
                 };
 
-                // Hook into onExecuted to get validated hexes from the backend
                 this.onExecuted = (message) => {
-                    // The backend now sends an array of validated hex strings
                     if (message?.hex_color) {
                         const validatedHexes = message.hex_color;
                         if (hexWidget) {
-                            // Update the text widget with the full, cleaned, comma-separated string
                             hexWidget.value = validatedHexes.join(", ");
-                            // Update the swatch to show the first color from the list
                             syncSwatchFromWidget(hexWidget.value);
                         }
                     }
                 };
                 
                 if (hexWidget) {
-                    // Hijack the original callback to sync our swatch whenever the user types
                     const originalCallback = hexWidget.callback;
                     hexWidget.callback = (value) => {
                         syncSwatchFromWidget(value);
                         return originalCallback?.apply(this, arguments);
                     };
                     
-                    // Create a new custom HTML widget and add our swatch to it
-                    const widget = this.addDOMWidget("color_picker", "div", swatch);
-                    widget.serialize = false; // Don't save this widget's value
-
-                    // Initial sync on node creation
+                    const widget = this.addDOMWidget("color_picker", "div", swatch, { serialize: false });
                     setTimeout(() => syncSwatchFromWidget(hexWidget.value), 0);
                 }
             };
