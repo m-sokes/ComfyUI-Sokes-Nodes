@@ -167,7 +167,7 @@ class load_random_image_sokes:
             except Exception as e: print(f"sokes_nodes.py load_random_image_sokes: Warning: Could not create temp directory {self.output_dir}: {e}")
     @classmethod
     def INPUT_TYPES(cls):
-        return { "required": { "folder_path": ("STRING", {"default": "", "multiline": True}), "filename_optional": ("STRING", {"default": "", "multiline": False}), "search_subfolders": ("BOOLEAN", {"default": False}), "n_images": ("INT", {"default": 1, "min": 1, "max": 100}), "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff}), "sort": ("BOOLEAN", {"default": False}), "export_with_alpha": ("BOOLEAN", {"default": False}), } }
+        return { "required": { "folder_path": ("STRING", {"default": "", "multiline": True}), "filename_optional": ("STRING", {"default": "", "multiline": False}), "search_subfolders": ("BOOLEAN", {"default": False}), "n_images": ("INT", {"default": 1, "min": -1, "max": 100}), "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff}), "sort": ("BOOLEAN", {"default": False}), "export_with_alpha": ("BOOLEAN", {"default": False}), } }
     CATEGORY = "Sokes 🦬/Loaders"
     RETURN_TYPES = ("IMAGE", "MASK", "LIST"); RETURN_NAMES = ("image", "mask", "image_path"); FUNCTION = "load_image_or_file"; OUTPUT_NODE = True
     def _get_all_matching_images(self, folder_path, filename_optional, search_subfolders):
@@ -247,19 +247,36 @@ class load_random_image_sokes:
                 if os.path.exists(f_path_norm): print(f"sokes_nodes.py: Skipping invalid/corrupt file: {os.path.basename(f_path_norm)}")
         final_selection_pool = [p for p in image_paths_found_normalized if p in valid_image_paths_set]
         if not final_selection_pool: raise FileNotFoundError(f"No valid images found for folder='{folder_path}' and filename='{filename_optional}'. Check paths, wildcards, and permissions.")
-        num_available = len(final_selection_pool); actual_n_images = min(n_images, num_available) if n_images > 0 else num_available
-        if actual_n_images == 0: raise ValueError("Zero images to load after filtering valid images.")
-        if actual_n_images < n_images and n_images > 0: print(f"sokes_nodes.py: Warning: Requested {n_images} images, but only {num_available} were in the weighted pool. Loading {actual_n_images}.")
+        
+        num_available = len(final_selection_pool)
         selected_paths_abs = []
-        if not sort:
-            random.seed(seed); random.shuffle(final_selection_pool)
-            selected_paths_abs = final_selection_pool[:actual_n_images]
-        else:
-            def natural_sort_key(s_path): return [int(text) if text.isdigit() else text.lower() for text in re.split(r'([0-9]+)', os.path.basename(s_path))]
+        def natural_sort_key(s_path): return [int(text) if text.isdigit() else text.lower() for text in re.split(r'([0-9]+)', os.path.basename(s_path))]
+
+        is_get_last_mode = (n_images == -1)
+        # Force sort if we need the last image
+        should_sort = sort or is_get_last_mode
+
+        if should_sort:
             final_selection_pool.sort(key=natural_sort_key)
-            start_python_index = 0
-            if seed > 0 and num_available > 0: start_python_index = (seed - 1) % num_available
-            selected_paths_abs = [final_selection_pool[(start_python_index + i) % num_available] for i in range(actual_n_images)]
+
+        if is_get_last_mode:
+            if num_available > 0:
+                selected_paths_abs = [final_selection_pool[-1]]
+        else:
+            # Original logic for n_images >= 0 and sort/no-sort
+            actual_n_images = min(n_images, num_available) if n_images > 0 else num_available
+            if actual_n_images == 0: raise ValueError("Zero images to load after filtering valid images.")
+            if actual_n_images < n_images and n_images > 0: print(f"sokes_nodes.py: Warning: Requested {n_images} images, but only {num_available} were in the weighted pool. Loading {actual_n_images}.")
+    
+            if should_sort: # This is True if sort checkbox is checked
+                start_python_index = 0
+                if seed > 0 and num_available > 0: start_python_index = (seed - 1) % num_available
+                selected_paths_abs = [final_selection_pool[(start_python_index + i) % num_available] for i in range(actual_n_images)]
+            else: # Not sorting, so random shuffle
+                random.seed(seed)
+                random.shuffle(final_selection_pool)
+                selected_paths_abs = final_selection_pool[:actual_n_images]
+
         if not selected_paths_abs: raise ValueError("No images were selected to load for processing.")
         output_images_tensor_list, output_masks_tensor_list = [], []; loaded_paths_final_abs, pil_images_for_preview = [], []
         final_image_mode = "RGB"
@@ -315,6 +332,41 @@ class load_random_image_sokes:
         hasher.update(params_string.encode('utf-8')); return hasher.hexdigest()
 
 # END Load Random Image with Path and Mask | Sokes 🦬
+##############################################################
+
+
+##############################################################
+# START ComfyUI Folder Paths | Sokes 🦬
+
+class ComfyUI_folder_paths_sokes:
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {}}
+
+    RETURN_TYPES = ("STRING", "STRING", "STRING")
+    RETURN_NAMES = ("output_folder", "input_folder", "models_folder")
+    FUNCTION = "get_comfy_paths"
+    CATEGORY = "Sokes 🦬/File Paths"
+    OUTPUT_NODE = True
+
+    def get_comfy_paths(self):
+        if folder_paths is None:
+            print("sokes_nodes.py: Warning: ComfyUI folder_paths module not found. Returning empty strings.")
+            return ("", "", "")
+
+        output_path = os.path.abspath(folder_paths.get_output_directory())
+        input_path = os.path.abspath(folder_paths.get_input_directory())
+        # Corrected from get_models_dir() to the models_dir attribute
+        models_path = os.path.abspath(folder_paths.models_dir)
+        
+        return (output_path, input_path, models_path)
+
+    @classmethod
+    def IS_CHANGED(cls):
+        # These paths are constant, so the node only needs to run once.
+        return "static_sokes_folder_paths_node"
+
+# END ComfyUI Folder Paths | Sokes 🦬
 ##############################################################
 
 
@@ -989,6 +1041,7 @@ NODE_CLASS_MAPPINGS = {
     "Latent Switch x9 | sokes 🦬": latent_input_switch_9x_sokes,
     "Replace Text with RegEx | sokes 🦬": replace_text_regex_sokes,
     "Load Random Image | sokes 🦬": load_random_image_sokes,
+    "ComfyUI Folder Paths | sokes 🦬": ComfyUI_folder_paths_sokes,
     "Hex to Color Name | sokes 🦬": hex_to_color_name_sokes,
     "Hex Color Swatch | sokes 🦬": hex_color_swatch_sokes,
     "Random Number | sokes 🦬": random_number_sokes,
@@ -1001,6 +1054,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "Latent Switch x9 | sokes 🦬": "Latent Switch x9 🦬",
     "Replace Text with RegEx | sokes 🦬": "Replace Text with RegEx 🦬",
     "Load Random Image | sokes 🦬": "Load Random Image 🦬",
+    "ComfyUI Folder Paths | sokes 🦬": "ComfyUI Folder Paths 🦬",
     "Hex to Color Name | sokes 🦬": "Hex to Color Name 🦬",
     "Hex Color Swatch | sokes 🦬": "Hex Color Swatch 🦬",
     "Random Number | sokes 🦬": "Random Number 🦬",
