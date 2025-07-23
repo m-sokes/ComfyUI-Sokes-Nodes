@@ -3,4 +3,4 @@ colormath
 Pillow
 opencv-python
 numpy
-math
+#math #included already
