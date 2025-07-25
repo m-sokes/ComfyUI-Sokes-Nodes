@@ -11,6 +11,9 @@ import numpy as np
 import cv2 # Not used directly in all snippets, but kept from original for broader context
 from PIL import Image, ImageOps, ImageDraw
 import math
+import requests
+import urllib.parse
+import io
 
 import webcolors
 from colormath.color_objects import sRGBColor, LabColor
@@ -18,6 +21,11 @@ from colormath.color_conversions import convert_color
 from colormath.color_diff import delta_e_cie1976, delta_e_cie2000
 
 from .sokes_color_maps import css3_names_to_hex, css3_hex_to_names, human_readable_map, explicit_targets_for_comparison
+
+# --- Google Street View API Key ---
+# Set your Google Street View API key here.
+# You can get one from the Google Cloud Platform: https://console.cloud.google.com/marketplace/product/google/street-view-image-backend.googleapis.com
+GOOGLE_STREET_VIEW_API_KEY = "YOUR_API_KEY_GOES_HERE"
 
 if not hasattr(np, "asscalar"):
         np.asscalar = lambda a: a.item()
@@ -137,6 +145,7 @@ if preview_available and not api_routes_setup:
             return web.json_response(formatted_files)
         except Exception as e:
             return web.json_response({"error": str(e)}, status=500)
+            
     api_routes_setup = True
 
 
@@ -221,10 +230,6 @@ class ImagePickerSokes:
 # END Image Picker | Sokes 🦬
 ##############################################################
 
-
-# ... (The rest of the Python file is unchanged) ...
-# I will omit the rest for brevity, as it is identical to the previous version.
-# Just make sure to put this corrected ImagePickerSokes class in your full file.
 
 ##############################################################
 # START Current Date & Time | Sokes 🦬
@@ -1044,6 +1049,135 @@ class RandomHexColorSokes:
 
 
 ##############################################################
+# START Street View Loader | Sokes 🦬
+
+class StreetViewLoaderSokes:
+    RESOLUTIONS = ["640x640 (1:1)", "640x480 (4:3)", "512x512 (1:1)"]
+    CATEGORY = "Sokes 🦬/Loaders"
+    RETURN_TYPES = ("IMAGE",)
+    FUNCTION = "load_street_view_image"
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "resolution": (cls.RESOLUTIONS,),
+                "location_mode": (["Address", "Latitude/Longitude"],),
+                "address": ("STRING", {"multiline": False, "default": "Eiffel Tower, Paris, France"}),
+                "latitude": ("FLOAT", {"default": 48.85826, "min": -90.0, "max": 90.0, "step": 0.0001}),
+                "longitude": ("FLOAT", {"default": 2.2945, "min": -180.0, "max": 180.0, "step": 0.0001}),
+                "fov": ("INT", {"default": 90, "min": 10, "max": 120, "step": 1}),
+                "heading": ("FLOAT", {"default": 235.0, "min": 0, "max": 360, "step": 0.001}),
+                "pitch": ("FLOAT", {"default": 10.0, "min": -90, "max": 90, "step": 0.001}),
+                "google_source": (["default", "outdoor"],),
+            },
+            "optional": {
+                "point_at_address": ("BOOLEAN", {"default": False}),
+            }
+        }
+
+    def get_coords_from_address(self, address):
+        encoded_address = urllib.parse.quote(address)
+        # Using a public, reliable geocoding service
+        url = f"https://nominatim.openstreetmap.org/search?q={encoded_address}&format=json"
+        headers = {"User-Agent": "ComfyUI-Sokes-Nodes/1.0"}
+        try:
+            r = requests.get(url, headers=headers, timeout=10)
+            r.raise_for_status()
+            data = r.json()
+            if data:
+                return float(data[0]["lat"]), float(data[0]["lon"])
+            else:
+                print(f"StreetViewLoader WARNING: Geocoding found no results for address: {address}")
+                return None, None
+        except Exception as e:
+            print(f"StreetViewLoader ERROR: Geocoding request failed: {e}")
+            return None, None
+
+    def calculate_heading(self, point_a, point_b):
+        lat1, lon1 = math.radians(point_a[0]), math.radians(point_a[1])
+        lat2, lon2 = math.radians(point_b[0]), math.radians(point_b[1])
+        dLon = lon2 - lon1
+        x = math.sin(dLon) * math.cos(lat2)
+        y = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(dLon)
+        bearing = math.degrees(math.atan2(x, y))
+        return (bearing + 360) % 360
+
+    def get_view_parameters_for_target(self, target_lat, target_lon):
+        metadata_url = (f"https://maps.googleapis.com/maps/api/streetview/metadata"
+                        f"?location={target_lat},{target_lon}&key={GOOGLE_STREET_VIEW_API_KEY}")
+        try:
+            r = requests.get(metadata_url, timeout=10)
+            r.raise_for_status()
+            data = r.json()
+            if data.get('status') == 'OK':
+                pano_location = data['location']
+                pano_lat, pano_lon = pano_location['lat'], pano_location['lng']
+                heading = self.calculate_heading((pano_lat, pano_lon), (target_lat, target_lon))
+                return {"heading": heading, "latitude": pano_lat, "longitude": pano_lon}
+            else:
+                error_msg = data.get('error_message', f"Could not find panorama for {target_lat},{target_lon}.")
+                print(f"StreetViewLoader WARNING: Metadata lookup failed ({data.get('status')}): {error_msg}")
+                return None
+        except Exception as e:
+            print(f"StreetViewLoader ERROR: Failed to fetch metadata for target {target_lat},{target_lon}: {e}")
+            return None
+
+    def load_street_view_image(self, resolution, location_mode, address, latitude, longitude, fov, heading, pitch, google_source, point_at_address=False):
+        res_string = resolution.split(' ')[0]
+        width, height = map(int, res_string.split('x'))
+        error_tensor = (torch.zeros(1, height, width, 3, dtype=torch.float32),)
+
+        if not GOOGLE_STREET_VIEW_API_KEY or GOOGLE_STREET_VIEW_API_KEY == "YOUR_API_KEY_GOES_HERE":
+            print("StreetViewLoader ERROR: Google API Key is missing. Please set it at the top of sokes_nodes.py.")
+            return error_tensor
+
+        loc_lat, loc_lon = latitude, longitude
+        if location_mode == "Address":
+            lat, lon = self.get_coords_from_address(address)
+            if lat is not None:
+                loc_lat, loc_lon = lat, lon
+            else:
+                return error_tensor
+
+        final_params = {"heading": heading, "latitude": loc_lat, "longitude": loc_lon}
+
+        if point_at_address:
+            print(f"StreetViewLoader: Auto-pointing enabled. Looking for panorama near target: {loc_lat},{loc_lon}...")
+            view_params = self.get_view_parameters_for_target(loc_lat, loc_lon)
+            if view_params:
+                final_params = view_params
+                print(f"StreetViewLoader: Found panorama. Using calculated heading: {final_params['heading']:.2f}° from {final_params['latitude']},{final_params['longitude']}")
+            else:
+                print("StreetViewLoader WARNING: Auto-pointing failed. Falling back to manual settings and original coordinates.")
+
+        api_url = (f"https://maps.googleapis.com/maps/api/streetview"
+                   f"?size={width}x{height}&location={final_params['latitude']},{final_params['longitude']}"
+                   f"&heading={final_params['heading']}&pitch={pitch}&fov={fov}&source={google_source}"
+                   f"&return_error_code=true&key={GOOGLE_STREET_VIEW_API_KEY}")
+        
+        try:
+            r = requests.get(api_url, timeout=15)
+            if 'Sorry, we have no imagery here.' in r.text or r.status_code == 404:
+                 print("StreetViewLoader ERROR: No image found for this location.")
+                 return error_tensor
+            r.raise_for_status()
+            
+            img = Image.open(io.BytesIO(r.content)).convert("RGB")
+            img_np = np.array(img).astype(np.float32) / 255.0
+            return (torch.from_numpy(img_np)[None,],)
+        except requests.exceptions.RequestException as e:
+            print(f"StreetViewLoader ERROR: Network/API request failed: {e}")
+            return error_tensor
+        except Exception as e:
+            print(f"StreetViewLoader ERROR: Failed to process image: {e}")
+            return error_tensor
+
+# END Street View Loader | Sokes 🦬
+##############################################################
+
+
+##############################################################
 # Node Mappings
 
 NODE_CLASS_MAPPINGS = {
@@ -1058,6 +1192,7 @@ NODE_CLASS_MAPPINGS = {
     "Random Number | sokes 🦬": random_number_sokes,
     "Generate Random Background | sokes 🦬": RandomArtGeneratorSokes,
     "Random Hex Color | sokes 🦬": RandomHexColorSokes,
+    "Street View Loader | sokes 🦬": StreetViewLoaderSokes,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -1072,4 +1207,5 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "Random Number | sokes 🦬": "Random Number 🦬",
     "Generate Random Background | sokes 🦬": "Generate Random Background 🦬",
     "Random Hex Color | sokes 🦬": "Random Hex Color 🦬",
+    "Street View Loader | sokes 🦬": "Street View Loader 🦬",
 }
