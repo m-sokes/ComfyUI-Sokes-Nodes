@@ -1006,14 +1006,29 @@ class RandomHexColorSokes:
 
     @staticmethod
     def _hsv_to_rgb(h, s, v):
-        if s == 0.0: v_int = int(v * 255); return (v_int, v_int, v_int)
-        c, h_prime, x = v * s, h / 60.0, c * (1 - abs(h_prime % 2 - 1))
+        if s == 0.0:
+            v_int = int(v * 255)
+            return (v_int, v_int, v_int)
+        
+        c = v * s
+        h_prime = h / 60.0
+        x = c * (1 - abs(h_prime % 2 - 1))
+        
         r1, g1, b1 = 0.0, 0.0, 0.0
-        if 0 <= h_prime < 1: r1, g1, b1 = c, x, 0
-        elif 1 <= h_prime < 2: r1, g1, b1 = x, c, 0
-        elif 3 <= h_prime < 4: r1, g1, b1 = 0, x, c
-        elif 4 <= h_prime < 5: r1, g1, b1 = x, 0, c
-        elif 5 <= h_prime <= 6: r1, g1, b1 = c, 0, x
+        
+        if 0 <= h_prime < 1:
+            r1, g1, b1 = c, x, 0
+        elif 1 <= h_prime < 2:
+            r1, g1, b1 = x, c, 0
+        elif 2 <= h_prime < 3:
+            r1, g1, b1 = 0, c, x
+        elif 3 <= h_prime < 4:
+            r1, g1, b1 = 0, x, c
+        elif 4 <= h_prime < 5:
+            r1, g1, b1 = x, 0, c
+        elif 5 <= h_prime <= 6:
+            r1, g1, b1 = c, 0, x
+            
         m = v - c
         return (int((r1 + m) * 255), int((g1 + m) * 255), int((b1 + m) * 255))
 
