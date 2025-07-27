@@ -1044,7 +1044,7 @@ class RandomHexColorSokes:
         elif color_type == "tan colors": r, g, b = self._hsv_to_rgb(random.uniform(36, 50), random.uniform(0.02, 0.16), random.uniform(0.8, 1.0))
         elif color_type == "light grays": gray_val = random.randint(192, 224); r, g, b = gray_val, gray_val, gray_val
         elif color_type == "dark grays": gray_val = random.randint(64, 96); r, g, b = gray_val, gray_val, gray_val
-        elif color_type == "very dark grays": gray_val = random.randint(16, 48); r, g, b = gray_val, gray_val, gray_val
+        elif color_type == "very dark grays": gray_val = random.randint(2, 48); r, g, b = gray_val, gray_val, gray_val
         elif color_type == "all grays": gray_val = random.randint(0, 255); r, g, b = gray_val, gray_val, gray_val
         else: return f"#{random.randint(0, 0xFFFFFF):06x}"
         return f"#{r:02x}{g:02x}{b:02x}"
