@@ -3,4 +3,5 @@ colormath
 Pillow
 opencv-python
 numpy
+requests>=2.31.0
 #math #included already

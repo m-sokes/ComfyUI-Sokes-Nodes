@@ -10,6 +10,7 @@ A small node suite for ComfyUI featuring the following nodes:
 | **Load Random Image** | Load a random image(s) and output optional alpha channel and reference image path(s)<br /><h6>Tip: You can use wildcards "*" and or "\|"'s in the folder path input</h6> |
 | **Hex to Color Name** | Convert hex to descriptive color names for image-generation prompts |
 | **Random Number** | A user friendly random number generator that supports int, float, and bool |
+| **Runpod Serverless** | Call a Runpod serverless endpoint (text or image+text). Outputs: response_text, full_response, status, execution_time.<br /><h6>Tip: Set RUNPOD_API_KEY env var</h6> |
 
 ---
 
@@ -41,6 +42,13 @@ To install nodes follow these steps:
 *Recommended ComfyUI extension: [ComfyUI-Manager](https://github.com/ltdrdata/ComfyUI-Manager)*
 
 ---
+
+### Runpod Serverless node
+
+- Requirements: set environment variable `RUNPOD_API_KEY`.
+- Inputs: `endpoint_url`, `model`, `timeout`, optional `prompt_text`, optional `image`.
+- Outputs: `response_text`, `full_response`, `status`, `execution_time`.
+- Note: For vision models, connect an `IMAGE` input; for text-only, leave it unconnected.
 
 ### Why a bison 🦬 emoji?
 

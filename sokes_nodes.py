@@ -6,6 +6,9 @@ import random
 import hashlib
 import imghdr
 import glob
+import json
+import time
+import base64
 import torch
 import numpy as np
 import cv2 # Not used directly in all snippets, but kept from original for broader context
@@ -14,6 +17,7 @@ import math
 import requests
 import urllib.parse
 import io
+from typing import Dict, Any, Tuple
 
 import webcolors
 from colormath.color_objects import sRGBColor, LabColor
@@ -25,7 +29,7 @@ from .sokes_color_maps import css3_names_to_hex, css3_hex_to_names, human_readab
 # --- Google Street View API Key ---
 # Set your Google Street View API key here.
 # You can get one from the Google Cloud Platform: https://console.cloud.google.com/marketplace/product/google/street-view-image-backend.googleapis.com
-GOOGLE_STREET_VIEW_API_KEY = "YOUR_API_KEY_GOES_HERE"
+GOOGLE_STREET_VIEW_API_KEY = "AIzaSyDqPoLAi8CFOklhh8X4rl_y-cvC2Qz-o-E"
 
 if not hasattr(np, "asscalar"):
         np.asscalar = lambda a: a.item()
@@ -1193,6 +1197,255 @@ class StreetViewLoaderSokes:
 
 
 ##############################################################
+# START Runpod Serverless | Sokes 🦬
+
+class RunpodServerlessSokes:
+    CATEGORY = "Sokes 🦬/Integrations"
+    RETURN_TYPES = ("STRING", "STRING", "STRING", "FLOAT")
+    RETURN_NAMES = ("response_text", "full_response", "status", "execution_time")
+    FUNCTION = "call_runpod_endpoint"
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "endpoint_url": ("STRING", {
+                    "default": "https://api.runpod.ai/v2/YOUR_ENDPOINT_ID/run",
+                    "multiline": False,
+                    "placeholder": "https://api.runpod.ai/v2/pz1ury0jpm654q/run"
+                }),
+                "model": ("STRING", {
+                    "default": "llava:7b",
+                    "multiline": False,
+                    "placeholder": "Vision: llava:7b | Text-only: gemma3:27b"
+                }),
+                "timeout": ("INT", {
+                    "default": 300,
+                    "min": 10,
+                    "max": 3600,
+                    "step": 10,
+                    "display": "number"
+                }),
+            },
+            "optional": {
+                "prompt_text": ("STRING", {
+                    "default": "Describe this image in detail",
+                    "multiline": True,
+                    "placeholder": "Text prompt for the model"
+                }),
+                "image": ("IMAGE", {
+                    "placeholder": "Optional: Connect image input for visual language models"
+                }),
+            }
+        }
+
+    def call_runpod_endpoint(self, endpoint_url: str, model: str, timeout: int, prompt_text: str = "Describe this image in detail", image=None) -> Tuple[str, str, str, float]:
+        start_time = time.time()
+        try:
+            final_api_key = os.getenv('RUNPOD_API_KEY', '')
+            if not final_api_key:
+                error_msg = (
+                    "No Runpod API key found. Set environment variable RUNPOD_API_KEY."
+                )
+                print(f"sokes_nodes.py Runpod: {error_msg}")
+                return error_msg, error_msg, "NO_API_KEY", 0.0
+
+            payload_dict = {
+                "input": {
+                    "model": model.strip(),
+                    "prompt": prompt_text.strip() if prompt_text.strip() else "Describe this image in detail",
+                    "stream": False
+                }
+            }
+
+            if image is not None:
+                print("sokes_nodes.py Runpod: Converting image to base64…")
+                image_b64 = self._convert_image_to_base64(image)
+                if image_b64:
+                    payload_dict["input"]["image"] = image_b64
+                else:
+                    print("sokes_nodes.py Runpod: Failed to convert image to base64.")
+            else:
+                print("sokes_nodes.py Runpod: No image provided (text-only request).")
+
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {final_api_key}"
+            }
+
+            print(f"sokes_nodes.py Runpod: Calling endpoint {endpoint_url}")
+
+            import copy
+            log_payload = copy.deepcopy(payload_dict)
+            if "input" in log_payload and "image" in log_payload["input"]:
+                image_data = payload_dict["input"]["image"]
+                log_payload["input"]["image"] = f"[IMAGE_DATA: {len(image_data)} chars]"
+            print(f"sokes_nodes.py Runpod: Payload = {json.dumps(log_payload, indent=2)}")
+
+            response = requests.post(
+                endpoint_url.strip(),
+                json=payload_dict,
+                headers=headers,
+                timeout=30
+            )
+
+            if response.status_code != 200:
+                error_msg = f"Runpod API error: {response.status_code} - {response.text}"
+                print(f"sokes_nodes.py Runpod: {error_msg}")
+                return error_msg, error_msg, "ERROR", time.time() - start_time
+
+            initial_response = response.json()
+            job_id = initial_response.get("id")
+            if not job_id:
+                error_msg = f"No job ID returned from Runpod: {initial_response}"
+                print(f"sokes_nodes.py Runpod: {error_msg}")
+                return error_msg, error_msg, "ERROR", time.time() - start_time
+
+            final_response = self._poll_job_completion(job_id, final_api_key, endpoint_url.strip(), timeout, start_time)
+            if final_response["status"] == "ERROR":
+                return (
+                    final_response["error"],
+                    final_response["error"],
+                    "ERROR",
+                    final_response["execution_time"]
+                )
+
+            response_text = self._extract_response_text(final_response["data"])
+            execution_time = time.time() - start_time
+            return (
+                response_text,
+                json.dumps(final_response["data"], indent=2),
+                "SUCCESS",
+                execution_time
+            )
+        except requests.exceptions.Timeout:
+            error_msg = f"Request timeout after {timeout} seconds"
+            print(f"sokes_nodes.py RunPod: {error_msg}")
+            return error_msg, error_msg, "TIMEOUT", time.time() - start_time
+        except requests.exceptions.RequestException as e:
+            error_msg = f"Request error: {str(e)}"
+            print(f"sokes_nodes.py RunPod: {error_msg}")
+            return error_msg, error_msg, "ERROR", time.time() - start_time
+        except Exception as e:
+            error_msg = f"Unexpected error: {str(e)}"
+            print(f"sokes_nodes.py RunPod: {error_msg}")
+            return error_msg, error_msg, "ERROR", time.time() - start_time
+
+    def _extract_response_text(self, response_data: Dict[str, Any]) -> str:
+        if not isinstance(response_data, dict):
+            text = str(response_data)
+            return text.rstrip('\n\r ')
+        for field in ["generated_text", "response", "text", "result", "content"]:
+            if field in response_data and response_data[field]:
+                text = str(response_data[field])
+                return text.rstrip('\n\r ')
+        raw_response = response_data.get("raw_response", {})
+        if isinstance(raw_response, dict) and "response" in raw_response:
+            text = str(raw_response["response"]) 
+            return text.rstrip('\n\r ')
+        output = response_data.get("output", {})
+        if isinstance(output, str):
+            return output.rstrip('\n\r ')
+        if isinstance(output, dict):
+            for field in ["response", "generated_text", "text", "result", "content"]:
+                if field in output and output[field]:
+                    text = str(output[field])
+                    return text.rstrip('\n\r ')
+            return json.dumps(output, indent=2)
+        return json.dumps(response_data, indent=2)
+
+    def _convert_image_to_base64(self, image_tensor) -> str:
+        try:
+            if image_tensor is None:
+                return ""
+            if hasattr(image_tensor, 'shape') and len(image_tensor.shape) == 4:
+                image_array = image_tensor[0]
+            else:
+                image_array = image_tensor
+            if hasattr(image_array, 'cpu'):
+                image_array = image_array.cpu().numpy()
+            if not isinstance(image_array, np.ndarray):
+                image_array = np.array(image_array)
+            if image_array.max() <= 1.0:
+                image_array = (image_array * 255).astype(np.uint8)
+            if len(image_array.shape) == 3 and image_array.shape[2] == 3:
+                pil_image = Image.fromarray(image_array, 'RGB')
+            elif len(image_array.shape) == 3 and image_array.shape[2] == 4:
+                pil_image = Image.fromarray(image_array, 'RGBA')
+            else:
+                pil_image = Image.fromarray(image_array, 'RGB')
+            buffer = io.BytesIO()
+            pil_image.save(buffer, format='PNG')
+            img_str = base64.b64encode(buffer.getvalue()).decode('utf-8')
+            return f"data:image/png;base64,{img_str}"
+        except Exception as e:
+            print(f"sokes_nodes.py Runpod: Error converting image to base64: {e}")
+            return ""
+
+    def _poll_job_completion(self, job_id: str, api_key: str, endpoint_url: str, timeout: int, start_time: float) -> Dict[str, Any]:
+        try:
+            url_parts = endpoint_url.rstrip('/').split('/')
+            if len(url_parts) >= 2 and url_parts[-1] == 'run':
+                endpoint_id = url_parts[-2]
+                status_url = f"https://api.runpod.ai/v2/{endpoint_id}/status/{job_id}"
+            else:
+                status_url = f"https://api.runpod.ai/v2/status/{job_id}"
+        except Exception as e:
+            print(f"sokes_nodes.py Runpod: Error parsing endpoint URL, using fallback: {e}")
+            status_url = f"https://api.runpod.ai/v2/status/{job_id}"
+
+        headers = {"Authorization": f"Bearer {api_key}"}
+        poll_interval = 2
+        max_poll_interval = 10
+        poll_count = 0
+
+        while time.time() - start_time < timeout:
+            poll_count += 1
+            elapsed = time.time() - start_time
+            try:
+                print(f"sokes_nodes.py Runpod: Poll #{poll_count} ({elapsed:.1f}s)")
+                response = requests.get(status_url, headers=headers, timeout=30)
+                if response.status_code != 200:
+                    print(f"sokes_nodes.py Runpod: Status check failed: {response.status_code} - {response.text}")
+                    time.sleep(poll_interval)
+                    continue
+                status_data = response.json()
+                job_status = status_data.get("status", "UNKNOWN")
+                if job_status == "COMPLETED":
+                    output = status_data.get("output", {})
+                    return {"status": "SUCCESS", "data": output, "execution_time": time.time() - start_time}
+                elif job_status == "FAILED":
+                    error_msg = status_data.get("error", "Job failed with no error message")
+                    return {"status": "ERROR", "error": f"Runpod job failed: {error_msg}", "execution_time": time.time() - start_time}
+                elif job_status in ["IN_QUEUE", "IN_PROGRESS"]:
+                    time.sleep(poll_interval)
+                    if poll_count % 5 == 0:
+                        poll_interval = min(poll_interval + 1, max_poll_interval)
+                else:
+                    time.sleep(poll_interval)
+            except requests.exceptions.RequestException as e:
+                print(f"sokes_nodes.py RunpPod: Error polling status: {e}")
+                time.sleep(poll_interval)
+                continue
+
+        return {"status": "ERROR", "error": f"Job polling timeout after {timeout} seconds", "execution_time": time.time() - start_time}
+
+    @classmethod
+    def IS_CHANGED(cls, *args, **kwargs):
+        # Change hash on inputs and API key suffix; helps ComfyUI cache invalidation
+        api_key = os.getenv('RUNPOD_API_KEY', '')
+        key_suffix = api_key[-6:] if api_key else "no_key"
+        h = hashlib.sha256()
+        h.update(str(args).encode('utf-8'))
+        h.update(str(kwargs).encode('utf-8'))
+        h.update(key_suffix.encode('utf-8'))
+        return h.hexdigest()
+
+# END Runpod Serverless | Sokes 🦬
+##############################################################
+
+
+##############################################################
 # Node Mappings
 
 NODE_CLASS_MAPPINGS = {
@@ -1208,6 +1461,7 @@ NODE_CLASS_MAPPINGS = {
     "Generate Random Background | sokes 🦬": RandomArtGeneratorSokes,
     "Random Hex Color | sokes 🦬": RandomHexColorSokes,
     "Street View Loader | sokes 🦬": StreetViewLoaderSokes,
+    "Runpod Serverless | sokes 🦬": RunpodServerlessSokes,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -1223,4 +1477,5 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "Generate Random Background | sokes 🦬": "Generate Random Background 🦬",
     "Random Hex Color | sokes 🦬": "Random Hex Color 🦬",
     "Street View Loader | sokes 🦬": "Street View Loader 🦬",
+    "Runpod Serverless | sokes 🦬": "Runpod Serverless 🦬",
 }
