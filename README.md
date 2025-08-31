@@ -8,6 +8,7 @@ A small node suite for ComfyUI featuring the following nodes:
 | **Empty Latent Selector (9 Inputs)** | Useful for generating a random latent dimentions based on a fixed set |
 | **Replace Text with RegEx** | Useful for using RegEx for text replacement |
 | **Load Random Image** | Load a random image(s) and output optional alpha channel and reference image path(s)<br /><h6>Tip: You can use wildcards "*" and or "\|"'s in the folder path input</h6> |
+| **Street View Loader** | Loads Google Street View images based on address or lat/lon. Outputs an image.<br /><h6>Tip: Set GOOGLE_STREET_VIEW_API_KEY env var</h6> |
 | **Hex to Color Name** | Convert hex to descriptive color names for image-generation prompts |
 | **Random Number** | A user friendly random number generator that supports int, float, and bool |
 | **Runpod Serverless** | Call a Runpod serverless endpoint (text or image+text). Outputs: response_text, full_response, status, execution_time.<br /><h6>Tip: Set RUNPOD_API_KEY env var</h6> |
@@ -46,9 +47,12 @@ To install nodes follow these steps:
 ### Runpod Serverless node
 
 - Requirements: set environment variable `RUNPOD_API_KEY`.
-- Inputs: `endpoint_url`, `model`, `timeout`, optional `prompt_text`, optional `image`.
-- Outputs: `response_text`, `full_response`, `status`, `execution_time`.
 - Note: For vision models, connect an `IMAGE` input; for text-only, leave it unconnected.
+
+### Street View Loader node
+
+- **Requirements**: Set environment variable `GOOGLE_STREET_VIEW_API_KEY`.
+- **Note**: When `point_at_address` is `True`, `pitch` is automatically set to `0` for an eye-level view, overriding any manual `pitch` input. If no Street View data is available for the location, a red error image will be displayed.
 
 ### Why a bison 🦬 emoji?
 
