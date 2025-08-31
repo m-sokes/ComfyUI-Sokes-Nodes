@@ -1,6 +1,10 @@
 import sys
 import os
 from datetime import datetime
+
+# Environment Variables Required:
+# GOOGLE_STREET_VIEW_API_KEY - Your Google Street View API key
+# RUNPOD_API_KEY - Your Runpod API key (optional, for Runpod integration)
 import re
 import random
 import hashlib
@@ -27,9 +31,9 @@ from colormath.color_diff import delta_e_cie1976, delta_e_cie2000
 from .sokes_color_maps import css3_names_to_hex, css3_hex_to_names, human_readable_map, explicit_targets_for_comparison
 
 # --- Google Street View API Key ---
-# Set your Google Street View API key here.
+# Get your Google Street View API key from environment variable GOOGLE_STREET_VIEW_API_KEY
 # You can get one from the Google Cloud Platform: https://console.cloud.google.com/marketplace/product/google/street-view-image-backend.googleapis.com
-GOOGLE_STREET_VIEW_API_KEY = "INSERT KEY HERE"
+GOOGLE_STREET_VIEW_API_KEY = os.getenv('GOOGLE_STREET_VIEW_API_KEY')
 
 if not hasattr(np, "asscalar"):
         np.asscalar = lambda a: a.item()
@@ -717,7 +721,7 @@ class RandomArtGeneratorSokes:
             result_name = human_readable_map.get(standard_name, standard_name)
         except ValueError:
             try:
-                requested_rgb = webcolors.hex_to_rgb(hex_code)
+                requested_rgb = webcolors.hex_to_rgb(hex_color)
                 requested_lab = convert_color(sRGBColor(*requested_rgb, is_upscaled=True), LabColor)
                 min_dist, closest_name_internal = float('inf'), "color"
                 for source_map in [explicit_targets_for_comparison, css3_names_to_hex]:
@@ -1071,6 +1075,12 @@ class RandomHexColorSokes:
 # START Street View Loader | Sokes 🦬
 
 class StreetViewLoaderSokes:
+    """
+    Loads Google Street View images.
+    
+    Requires environment variable: GOOGLE_STREET_VIEW_API_KEY
+    Get your API key from: https://console.cloud.google.com/marketplace/product/google/street-view-image-backend.googleapis.com
+    """
     RESOLUTIONS = ["640x640 (1:1)", "640x480 (4:3)", "512x512 (1:1)"]
     CATEGORY = "Sokes 🦬/Loaders"
     RETURN_TYPES = ("IMAGE",)
@@ -1145,11 +1155,52 @@ class StreetViewLoaderSokes:
     def load_street_view_image(self, resolution, location_mode, address, latitude, longitude, fov, heading, pitch, google_source, point_at_address=False):
         res_string = resolution.split(' ')[0]
         width, height = map(int, res_string.split('x'))
+        
+        # Check for API key first
+        if not GOOGLE_STREET_VIEW_API_KEY:
+            print("StreetViewLoader ERROR: Google API Key is missing. Please set environment variable GOOGLE_STREET_VIEW_API_KEY.")
+            # Create an error image with text
+            error_img = Image.new('RGB', (width, height), color='#FF6B6B')
+            draw = ImageDraw.Draw(error_img)
+            
+            # Try to use a default font, fallback to basic text if font not available
+            try:
+                from PIL import ImageFont
+                # Try to use a system font
+                font_size = max(12, min(width, height) // 20)
+                try:
+                    font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", font_size)
+                except:
+                    font = ImageFont.load_default()
+            except ImportError:
+                font = None
+            
+            error_text = "Add API key\nGOOGLE_STREET_VIEW_API_KEY\nin your environment variables"
+            text_lines = error_text.split('\n')
+            
+            # Calculate text position (center)
+            if font:
+                # Get text size for centering
+                bbox = draw.textbbox((0, 0), error_text, font=font)
+                text_width = bbox[2] - bbox[0]
+                text_height = bbox[3] - bbox[1]
+                x = (width - text_width) // 2
+                y = (height - text_height) // 2
+                
+                # Draw text in white
+                draw.text((x, y), error_text, font=font, fill='#FFFFFF')
+            else:
+                # Fallback to basic text positioning
+                x = width // 4
+                y = height // 3
+                for i, line in enumerate(text_lines):
+                    draw.text((x, y + i * 20), line, fill='#FFFFFF')
+            
+            # Convert to tensor
+            error_np = np.array(error_img).astype(np.float32) / 255.0
+            return (torch.from_numpy(error_np)[None,],)
+        
         error_tensor = (torch.zeros(1, height, width, 3, dtype=torch.float32),)
-
-        if not GOOGLE_STREET_VIEW_API_KEY or GOOGLE_STREET_VIEW_API_KEY == "YOUR_API_KEY_GOES_HERE":
-            print("StreetViewLoader ERROR: Google API Key is missing. Please set it at the top of sokes_nodes.py.")
-            return error_tensor
 
         loc_lat, loc_lon = latitude, longitude
         if location_mode == "Address":
@@ -1159,20 +1210,22 @@ class StreetViewLoaderSokes:
             else:
                 return error_tensor
 
-        final_params = {"heading": heading, "latitude": loc_lat, "longitude": loc_lon}
+        final_params = {"heading": heading, "latitude": loc_lat, "longitude": loc_lon, "pitch": pitch}
 
         if point_at_address:
             print(f"StreetViewLoader: Auto-pointing enabled. Looking for panorama near target: {loc_lat},{loc_lon}...")
             view_params = self.get_view_parameters_for_target(loc_lat, loc_lon)
             if view_params:
                 final_params = view_params
-                print(f"StreetViewLoader: Found panorama. Using calculated heading: {final_params['heading']:.2f}° from {final_params['latitude']},{final_params['longitude']}")
+                # Reset pitch to 0 when auto-pointing at address for better viewing
+                final_params["pitch"] = 0.0
+                print(f"StreetViewLoader: Found panorama. Using calculated heading: {final_params['heading']:.2f}° from {final_params['latitude']},{final_params['longitude']} with pitch reset to 0°")
             else:
                 print("StreetViewLoader WARNING: Auto-pointing failed. Falling back to manual settings and original coordinates.")
 
         api_url = (f"https://maps.googleapis.com/maps/api/streetview"
                    f"?size={width}x{height}&location={final_params['latitude']},{final_params['longitude']}"
-                   f"&heading={final_params['heading']}&pitch={pitch}&fov={fov}&source={google_source}"
+                   f"&heading={final_params['heading']}&pitch={final_params['pitch']}&fov={fov}&source={google_source}"
                    f"&return_error_code=true&key={GOOGLE_STREET_VIEW_API_KEY}")
         
         try:
@@ -1200,6 +1253,12 @@ class StreetViewLoaderSokes:
 # START Runpod Serverless | Sokes 🦬
 
 class RunpodServerlessSokes:
+    """
+    Integrates with Runpod Serverless API.
+    
+    Requires environment variable: RUNPOD_API_KEY
+    Get your API key from: https://runpod.io/console/user/settings
+    """
     CATEGORY = "Sokes 🦬/Integrations"
     RETURN_TYPES = ("STRING", "STRING", "STRING", "FLOAT")
     RETURN_NAMES = ("response_text", "full_response", "status", "execution_time")
@@ -1479,4 +1538,3 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "Street View Loader | sokes 🦬": "Street View Loader 🦬",
     "Runpod Serverless | sokes 🦬": "Runpod Serverless 🦬",
 }
-
