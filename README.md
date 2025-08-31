@@ -52,7 +52,8 @@ To install nodes follow these steps:
 ### Street View Loader node
 
 - **Requirements**: Set environment variable `GOOGLE_STREET_VIEW_API_KEY`.
-- **Note**: When `point_at_address` is `True`, `pitch` is automatically set to `0` for an eye-level view, overriding any manual `pitch` input. If no Street View data is available for the location, a red error image will be displayed.
+
+---
 
 ### Why a bison 🦬 emoji?
 
