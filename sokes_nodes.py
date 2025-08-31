@@ -29,7 +29,7 @@ from .sokes_color_maps import css3_names_to_hex, css3_hex_to_names, human_readab
 # --- Google Street View API Key ---
 # Set your Google Street View API key here.
 # You can get one from the Google Cloud Platform: https://console.cloud.google.com/marketplace/product/google/street-view-image-backend.googleapis.com
-GOOGLE_STREET_VIEW_API_KEY = "AIzaSyDqPoLAi8CFOklhh8X4rl_y-cvC2Qz-o-E"
+GOOGLE_STREET_VIEW_API_KEY = "INSERT KEY HERE"
 
 if not hasattr(np, "asscalar"):
         np.asscalar = lambda a: a.item()
@@ -1479,3 +1479,4 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "Street View Loader | sokes 🦬": "Street View Loader 🦬",
     "Runpod Serverless | sokes 🦬": "Runpod Serverless 🦬",
 }
+
