@@ -47,7 +47,7 @@ To install nodes follow these steps:
 
 ### Runpod Serverless node
 
-- **Requirements**: set environment variable `RUNPOD_API_KEY`.
+- **Requirements**: Set environment variable `RUNPOD_API_KEY`.
 - Note: For vision models, connect an `IMAGE` input; for text-only, leave it unconnected.
 
 ### Street View Loader node
