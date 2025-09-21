@@ -6,6 +6,7 @@ A small node suite for ComfyUI featuring the following nodes:
 | --- | --- |
 | **Current Date & Time** | Add the current date and or time to the filename with custom formatting. E.g. YYYY-MM-DD<br /><h6>Tip: Also supports python formated date & time properties</h6> |
 | **Empty Latent Selector (9 Inputs)** | Useful for generating a random latent dimentions based on a fixed set |
+| **Get Files in Folder with Extension** | Gets a list of files with a specific extension from a given folder |
 | **Hex to Color Name** | Convert hex to descriptive color names for image-generation prompts |
 | **Load Random Image** | Load a random image(s) and output optional alpha channel and reference image path(s)<br /><h6>Tip: You can use wildcards "*" and or "\|"'s in the folder path input</h6> |
 | **Random Number** | A user friendly random number generator that supports int, float, and bool |
@@ -65,3 +66,13 @@ There's no offical musk ox emoji...I'll reached out to the Unicode Consortium.
 ### Future Node Concepts
 - [ ] Prompt Styler node with custom categories based on json file(s)
 - [ ] Palette-to-Prompt Builder
+
+### Get Files in Folder By Extension Node
+
+- **Inputs**: `folder_path` (string), `file_extension` (string).
+- **Outputs**: `file_list` (list of strings).
+- **Note**: The `file_extension` input can be provided with or without a leading dot (e.g., "mp3" or ".mp3"). The output list of files will be sorted alphabetically.
+
+### Hex to Color Name Node
+
+- **Inputs**: `hex_color` (string, comma-separated hex codes), `use_css_name` (boolean).

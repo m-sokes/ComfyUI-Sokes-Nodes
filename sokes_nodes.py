@@ -160,7 +160,7 @@ if preview_available and not api_routes_setup:
 ##############################################################
 # START Image Picker | Sokes 🦬
 
-class ImagePickerSokes:
+class image_picker_sokes:
     CATEGORY = "Sokes 🦬/Loaders"
     RETURN_TYPES = ("IMAGE", "MASK", "STRING")
     RETURN_NAMES = ("image", "mask", "image_path")
@@ -499,7 +499,7 @@ class load_random_image_sokes:
 ##############################################################
 # START ComfyUI Folder Paths | Sokes 🦬
 
-class ComfyUI_folder_paths_sokes:
+class comfyui_folder_paths_sokes:
     @classmethod
     def INPUT_TYPES(cls):
         return {"required": {}}
@@ -526,6 +526,71 @@ class ComfyUI_folder_paths_sokes:
         return "static_sokes_folder_paths_node"
 
 # END ComfyUI Folder Paths | Sokes 🦬
+##############################################################
+
+
+##############################################################
+# START Get Files in Folder with Extension | Sokes 🦬
+
+class get_files_in_folder_by_extension_sokes:
+    CATEGORY = "Sokes 🦬/File Paths"
+    RETURN_TYPES = ("LIST",)
+    RETURN_NAMES = ("file_list",)
+    FUNCTION = "get_files_by_extension"
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "folder_path": ("STRING", {"default": "", "multiline": False, "placeholder": "e.g., C:/ComfyUI/input"}),
+                "file_extension": ("STRING", {"default": ".txt", "multiline": False, "placeholder": "e.g., mp3 or .mp3"}),
+            }
+        }
+
+    def get_files_by_extension(self, folder_path, file_extension):
+        if not folder_path or not os.path.isdir(folder_path):
+            print(f"GetFilesByExtension ERROR: Invalid or non-existent folder path: {folder_path}")
+            return ([],)
+
+        # Normalize file extension to start with a dot
+        normalized_extension = file_extension.strip()
+        if not normalized_extension.startswith('.'):
+            normalized_extension = '.' + normalized_extension
+
+        matching_files = []
+        try:
+            for f_name in os.listdir(folder_path):
+                full_path = os.path.join(folder_path, f_name)
+                if os.path.isfile(full_path) and f_name.lower().endswith(normalized_extension.lower()):
+                    matching_files.append(os.path.normpath(full_path))
+        except Exception as e:
+            print(f"GetFilesByExtension ERROR: Could not list files in {folder_path}: {e}")
+            return ([],)
+
+        return (sorted(matching_files),)
+
+    @classmethod
+    def IS_CHANGED(cls, folder_path, file_extension):
+        # Hash of folder path, extension, and modification times of matching files
+        normalized_extension = file_extension.strip()
+        if not normalized_extension.startswith('.'):
+            normalized_extension = '.' + normalized_extension
+
+        hash_input = f"{folder_path}-{normalized_extension}"
+        mtimes = []
+        if os.path.isdir(folder_path):
+            try:
+                for f_name in os.listdir(folder_path):
+                    full_path = os.path.join(folder_path, f_name)
+                    if os.path.isfile(full_path) and f_name.lower().endswith(normalized_extension.lower()):
+                        mtimes.append(str(os.path.getmtime(full_path)))
+            except Exception:
+                pass
+        
+        hash_input += "-" + ",".join(sorted(mtimes))
+        return hashlib.sha256(hash_input.encode('utf-8')).hexdigest()
+
+# END Get Files in Folder with Extension | Sokes 🦬
 ##############################################################
 
 
@@ -675,7 +740,7 @@ class random_number_sokes:
 
 ##############################################################
 # START Generate Random Background | Sokes 🦬
-class RandomArtGeneratorSokes:
+class random_art_generator_sokes:
     CATEGORY = "Sokes 🦬/Generators"
     RETURN_TYPES = ("IMAGE", "STRING", "STRING")
     RETURN_NAMES = ("image", "description", "alpha_matte_path")
@@ -985,7 +1050,7 @@ class RandomArtGeneratorSokes:
 ##############################################################
 # START Random Hex Color | Sokes 🦬
 
-class RandomHexColorSokes:
+class random_hex_color_sokes:
     CATEGORY = "Sokes 🦬/Generators"
     RETURN_TYPES = ("STRING",)
     RETURN_NAMES = ("hex_color_string",)
@@ -1074,7 +1139,7 @@ class RandomHexColorSokes:
 ##############################################################
 # START Street View Loader | Sokes 🦬
 
-class StreetViewLoaderSokes:
+class streetview_loader_sokes:
     """
     Loads Google Street View images.
     
@@ -1252,7 +1317,7 @@ class StreetViewLoaderSokes:
 ##############################################################
 # START Runpod Serverless | Sokes 🦬
 
-class RunpodServerlessSokes:
+class runpod_serverless_sokes:
     """
     Integrates with Runpod Serverless API.
     
@@ -1508,33 +1573,33 @@ class RunpodServerlessSokes:
 # Node Mappings
 
 NODE_CLASS_MAPPINGS = {
-    "Image Picker | sokes 🦬": ImagePickerSokes,
+    "ComfyUI Folder Paths | sokes 🦬": comfyui_folder_paths_sokes,
     "Current Date & Time | sokes 🦬": current_date_time_sokes,
+    "Image Picker | sokes 🦬": image_picker_sokes,
     "Latent Switch x9 | sokes 🦬": latent_input_switch_9x_sokes,
-    "Replace Text with RegEx | sokes 🦬": replace_text_regex_sokes,
     "Load Random Image | sokes 🦬": load_random_image_sokes,
-    "ComfyUI Folder Paths | sokes 🦬": ComfyUI_folder_paths_sokes,
-    "Hex to Color Name | sokes 🦬": hex_to_color_name_sokes,
+    "Generate Random Background | sokes 🦬": random_art_generator_sokes,
+    "Get Files in Folder with Extension | sokes 🦬": get_files_in_folder_by_extension_sokes,
     "Hex Color Swatch | sokes 🦬": hex_color_swatch_sokes,
+    "Random Hex Color | sokes 🦬": random_hex_color_sokes,
     "Random Number | sokes 🦬": random_number_sokes,
-    "Generate Random Background | sokes 🦬": RandomArtGeneratorSokes,
-    "Random Hex Color | sokes 🦬": RandomHexColorSokes,
-    "Street View Loader | sokes 🦬": StreetViewLoaderSokes,
-    "Runpod Serverless | sokes 🦬": RunpodServerlessSokes,
+    "Replace Text with RegEx | sokes 🦬": replace_text_regex_sokes,
+    "Runpod Serverless | sokes 🦬": runpod_serverless_sokes,
+    "Street View Loader | sokes 🦬": streetview_loader_sokes,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "Image Picker | sokes 🦬": "Image Picker 🦬",
-    "Current Date & Time | sokes 🦬": "Current Date & Time 🦬",
-    "Latent Switch x9 | sokes 🦬": "Latent Switch x9 🦬",
-    "Replace Text with RegEx | sokes 🦬": "Replace Text with RegEx 🦬",
-    "Load Random Image | sokes 🦬": "Load Random Image 🦬",
     "ComfyUI Folder Paths | sokes 🦬": "ComfyUI Folder Paths 🦬",
-    "Hex to Color Name | sokes 🦬": "Hex to Color Name 🦬",
-    "Hex Color Swatch | sokes 🦬": "Hex Color Swatch 🦬",
-    "Random Number | sokes 🦬": "Random Number 🦬",
+    "Current Date & Time | sokes 🦬": "Current Date & Time 🦬",
+    "Image Picker | sokes 🦬": "Image Picker 🦬",
+    "Latent Switch x9 | sokes 🦬": "Latent Switch x9 🦬",
+    "Load Random Image | sokes 🦬": "Load Random Image 🦬",
     "Generate Random Background | sokes 🦬": "Generate Random Background 🦬",
+    "Get Files in Folder with Extension | sokes 🦬": "Get Files in Folder with Extension 🦬",
+    "Hex Color Swatch | sokes 🦬": "Hex Color Swatch 🦬",
     "Random Hex Color | sokes 🦬": "Random Hex Color 🦬",
-    "Street View Loader | sokes 🦬": "Street View Loader 🦬",
+    "Random Number | sokes 🦬": "Random Number 🦬",
+    "Replace Text with RegEx | sokes 🦬": "Replace Text with RegEx 🦬",
     "Runpod Serverless | sokes 🦬": "Runpod Serverless 🦬",
+    "Street View Loader | sokes 🦬": "Street View Loader 🦬",
 }
