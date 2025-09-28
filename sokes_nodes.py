@@ -532,10 +532,11 @@ class comfyui_folder_paths_sokes:
 ##############################################################
 # START Get Files in Folder with Extension | Sokes 🦬
 
-class get_files_in_folder_by_extension_sokes:
+class get_files_in_folder_with_extension_sokes:
     CATEGORY = "Sokes 🦬/File Paths"
-    RETURN_TYPES = ("LIST",)
-    RETURN_NAMES = ("file_list",)
+    RETURN_TYPES = ("STRING", "LIST",) # Removed "STRING" for selected_file
+    RETURN_NAMES = ("files_text_newlines", "file_list",) # Removed "selected_file"
+    OUTPUT_IS_LIST = (False, True,) # files_text_newlines is not a list, file_list is a list
     FUNCTION = "get_files_by_extension"
 
     @classmethod
@@ -543,47 +544,82 @@ class get_files_in_folder_by_extension_sokes:
         return {
             "required": {
                 "folder_path": ("STRING", {"default": "", "multiline": False, "placeholder": "e.g., C:/ComfyUI/input"}),
-                "file_extension": ("STRING", {"default": ".txt", "multiline": False, "placeholder": "e.g., mp3 or .mp3"}),
+                "file_extensions": ("STRING", {"default": ".txt", "multiline": False, "placeholder": "e.g., mov|gif or .mp4|.avi"}),
+                "search_subfolders": ("BOOLEAN", {"default": False, "label_on": "Enabled", "label_off": "Disabled"}),
+                "output_files": (["all files", "single file"], {"default": "all files"}), # Combo box for output mode
+                "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff}), # Seed for 'one' mode
             }
         }
 
-    def get_files_by_extension(self, folder_path, file_extension):
+    def get_files_by_extension(self, folder_path, file_extensions, search_subfolders, output_files, seed):
         if not folder_path or not os.path.isdir(folder_path):
             print(f"GetFilesByExtension ERROR: Invalid or non-existent folder path: {folder_path}")
-            return ([],)
+            return ("", [])
 
-        # Normalize file extension to start with a dot
-        normalized_extension = file_extension.strip()
-        if not normalized_extension.startswith('.'):
-            normalized_extension = '.' + normalized_extension
+        # Prepare a list of normalized extensions
+        extensions_list = [ext.strip() for ext in file_extensions.split('|')]
+        normalized_extensions = []
+        for ext in extensions_list:
+            if not ext.startswith('.'):
+                normalized_extensions.append('.' + ext.lower())
+            else:
+                normalized_extensions.append(ext.lower())
 
         matching_files = []
         try:
-            for f_name in os.listdir(folder_path):
-                full_path = os.path.join(folder_path, f_name)
-                if os.path.isfile(full_path) and f_name.lower().endswith(normalized_extension.lower()):
-                    matching_files.append(os.path.normpath(full_path))
+            if search_subfolders:
+                for root, _, files in os.walk(folder_path):
+                    for f_name in files:
+                        full_path = os.path.join(root, f_name)
+                        if any(f_name.lower().endswith(ext) for ext in normalized_extensions):
+                            matching_files.append(os.path.normpath(full_path))
+            else:
+                for f_name in os.listdir(folder_path):
+                    full_path = os.path.join(folder_path, f_name)
+                    if os.path.isfile(full_path) and any(f_name.lower().endswith(ext) for ext in normalized_extensions):
+                        matching_files.append(os.path.normpath(full_path))
         except Exception as e:
             print(f"GetFilesByExtension ERROR: Could not list files in {folder_path}: {e}")
-            return ([],)
+            return ("", [])
 
-        return (sorted(matching_files),)
+        sorted_files = sorted(matching_files)
+        
+        if output_files == "single file" and sorted_files:
+            random.seed(seed)
+            selected_file = random.choice(sorted_files)
+            # When "single file" is chosen, both outputs return only the selected file
+            return (selected_file, [selected_file],)
+        else:
+            # Otherwise, return all files as before
+            files_text_newlines = "\n".join(sorted_files)
+            return (files_text_newlines, sorted_files,)
 
     @classmethod
-    def IS_CHANGED(cls, folder_path, file_extension):
-        # Hash of folder path, extension, and modification times of matching files
-        normalized_extension = file_extension.strip()
-        if not normalized_extension.startswith('.'):
-            normalized_extension = '.' + normalized_extension
+    def IS_CHANGED(cls, folder_path, file_extensions, search_subfolders, output_files, seed):
+        # Hash of folder path, extensions, search_subfolders, output_files, seed, and modification times of matching files
+        extensions_list = [ext.strip() for ext in file_extensions.split('|')]
+        normalized_extensions = []
+        for ext in extensions_list:
+            if not ext.startswith('.'):
+                normalized_extensions.append('.' + ext.lower())
+            else:
+                normalized_extensions.append(ext.lower())
 
-        hash_input = f"{folder_path}-{normalized_extension}"
+        hash_input = f"{folder_path}-{'_'.join(sorted(normalized_extensions))}-{search_subfolders}-{output_files}-{seed}"
         mtimes = []
         if os.path.isdir(folder_path):
             try:
-                for f_name in os.listdir(folder_path):
-                    full_path = os.path.join(folder_path, f_name)
-                    if os.path.isfile(full_path) and f_name.lower().endswith(normalized_extension.lower()):
-                        mtimes.append(str(os.path.getmtime(full_path)))
+                if search_subfolders:
+                    for root, _, files in os.walk(folder_path):
+                        for f_name in files:
+                            full_path = os.path.join(root, f_name)
+                            if any(f_name.lower().endswith(ext) for ext in normalized_extensions):
+                                mtimes.append(str(os.path.getmtime(full_path)))
+                else:
+                    for f_name in os.listdir(folder_path):
+                        full_path = os.path.join(folder_path, f_name)
+                        if os.path.isfile(full_path) and any(f_name.lower().endswith(ext) for ext in normalized_extensions):
+                            mtimes.append(str(os.path.getmtime(full_path)))
             except Exception:
                 pass
         
