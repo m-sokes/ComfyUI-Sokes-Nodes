@@ -240,7 +240,7 @@ class image_picker_sokes:
 
 
 ##############################################################
-# START Current Date & Time | Sokes 🦬
+# START Current Date and Time | Sokes 🦬
 
 class current_date_time_sokes:
     def __init__(self):
@@ -274,7 +274,7 @@ class current_date_time_sokes:
     def IS_CHANGED(cls, date_time_format):
         return (datetime.now().timestamp(),)
 
-# END Current Date & Time | Sokes 🦬
+# END Current Date and Time | Sokes 🦬
 ##############################################################
 
 
@@ -537,7 +537,7 @@ class get_files_in_folder_with_extension_sokes:
     RETURN_TYPES = ("STRING", "LIST",) # Removed "STRING" for selected_file
     RETURN_NAMES = ("files_text_newlines", "file_list",) # Removed "selected_file"
     OUTPUT_IS_LIST = (False, True,) # files_text_newlines is not a list, file_list is a list
-    FUNCTION = "get_files_by_extension"
+    FUNCTION = "get_files_with_extension"
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -551,7 +551,7 @@ class get_files_in_folder_with_extension_sokes:
             }
         }
 
-    def get_files_by_extension(self, folder_path, file_extensions, search_subfolders, output_files, seed):
+    def get_files_with_extension(self, folder_path, file_extensions, search_subfolders, output_files, seed):
         if not folder_path or not os.path.isdir(folder_path):
             print(f"GetFilesByExtension ERROR: Invalid or non-existent folder path: {folder_path}")
             return ("", [])
@@ -1610,9 +1610,9 @@ class runpod_serverless_sokes:
 
 NODE_CLASS_MAPPINGS = {
     "ComfyUI Folder Paths | sokes 🦬": comfyui_folder_paths_sokes,
-    "Current Date & Time | sokes 🦬": current_date_time_sokes,
+    "Current Date and Time | sokes 🦬": current_date_time_sokes,
     "Generate Random Background | sokes 🦬": random_art_generator_sokes,
-    "Get Files in Folder with Extension | sokes 🦬": get_files_in_folder_by_extension_sokes,
+    "Get Files in Folder with Extension | sokes 🦬": get_files_in_folder_with_extension_sokes,
     "Hex Color Swatch | sokes 🦬": hex_color_swatch_sokes,
     "Hex to Color Name | sokes 🦬": hex_to_color_name_sokes,
     "Image Picker | sokes 🦬": image_picker_sokes,
@@ -1627,7 +1627,7 @@ NODE_CLASS_MAPPINGS = {
 
 NODE_DISPLAY_NAME_MAPPINGS = {
     "ComfyUI Folder Paths | sokes 🦬": "ComfyUI Folder Paths 🦬",
-    "Current Date & Time | sokes 🦬": "Current Date & Time 🦬",
+    "Current Date and Time | sokes 🦬": "Current Date and Time 🦬",
     "Generate Random Background | sokes 🦬": "Generate Random Background 🦬",
     "Get Files in Folder with Extension | sokes 🦬": "Get Files in Folder with Extension 🦬",
     "Hex Color Swatch | sokes 🦬": "Hex Color Swatch 🦬",
