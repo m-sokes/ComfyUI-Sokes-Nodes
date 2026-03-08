@@ -1,5 +1,287 @@
 import { app } from "../../../scripts/app.js";
 
+// CSS for invisible noodles with glow effects
+const SOKES_STYLES = `
+<style id="sokes-invisible-noodles-style">
+/* Hide the noodle/line for sokes-hidden-link connections */
+.sokes-hidden-link .litegraph.link {
+    stroke: transparent !important;
+    stroke-width: 0 !important;
+    pointer-events: none;
+    opacity: 0;
+}
+
+/* Glow effect on connected slots when hovering parent node */
+.sokes-node-hover .sokes-connected-slot-output::before,
+.sokes-node-hover .sokes-connected-slot-input::before {
+    content: '';
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    box-shadow: 0 0 10px 3px var(--sokes-link-color, #4a9eff),
+                0 0 20px 6px var(--sokes-link-color, #4a9eff);
+    animation: sokes-pulse 1.5s ease-in-out infinite;
+}
+
+/* Output slot glow styling */
+.sokes-connected-slot-output {
+    position: relative;
+}
+.sokes-connected-slot-output .slot_circle {
+    stroke: var(--sokes-link-color, #4a9eff) !important;
+    stroke-width: 3px !important;
+    filter: drop-shadow(0 0 5px var(--sokes-link-color, #4a9eff));
+    transition: all 0.3s ease;
+}
+
+/* Input slot glow styling */
+.sokes-connected-slot-input {
+    position: relative;
+}
+.sokes-connected-slot-input .slot_label {
+    color: var(--sokes-link-color, #4a9eff) !important;
+    text-shadow: 0 0 5px var(--sokes-link-color, #4a9eff);
+    font-weight: bold;
+}
+.sokes-connected-slot-input .litegraph.io_slot {
+    position: relative;
+}
+.sokes-connected-slot-input .litegraph.io_slot::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 2px solid var(--sokes-link-color, #4a9eff);
+    box-shadow: 0 0 8px 2px var(--sokes-link-color, #4a9eff);
+}
+
+/* Pulse animation for glow effect */
+@keyframes sokes-pulse {
+    0%, 100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+    50% {
+        opacity: 0.7;
+        transform: scale(1.1);
+    }
+}
+
+/* When hovering a connected node, show the noodle briefly */
+.sokes-link-visible .litegraph.link {
+    stroke: var(--sokes-link-color, #4a9eff) !important;
+    stroke-width: 3px !important;
+    opacity: 0.6 !important;
+    pointer-events: auto;
+}
+
+/* Highlight slot backgrounds when connected */
+.sokes-connected-slot-output.bg {
+    background: var(--sokes-link-color, #4a9eff) !important;
+}
+</style>
+`;
+
+// Helper function to create custom link with hidden noodle styling
+function createHiddenLink(sokesNode, targetNode, fromSlot, toSlot, linkColor = '#4a9eff') {
+    // Create the connection normally first
+    const result = sokesNode.connect(fromSlot, targetNode, toSlot);
+
+    if (result && result.link) {
+        const linkId = result.link;
+
+        // Mark this as a hidden link by adding custom data
+        if (!app.graph.links[linkId]) {
+            return result;
+        }
+
+        const link = app.graph.links[linkId];
+        link._sokesHidden = true;
+        link._sokesColor = linkColor;
+
+        // Add class to both nodes for slot styling
+        sokesNode.element.classList.add('sokes-node-with-hidden-links');
+        targetNode.element.classList.add('sokes-node-with-hidden-links');
+
+        // Style the output slot on source node
+        const outputSlot = sokesNode.outputs[fromSlot];
+        if (outputSlot) {
+            outputSlot._sokesConnected = true;
+            outputSlot._sokesColor = linkColor;
+        }
+
+        // Style the input slot on target node
+        const inputSlot = targetNode.inputs[toSlot];
+        if (inputSlot) {
+            inputSlot._sokesConnected = true;
+            inputSlot._sokesColor = linkColor;
+        }
+    }
+
+    return result;
+}
+
+// Apply hover effects to nodes with hidden links
+function setupNodeHoverEffects(node) {
+    const element = node.element;
+    if (!element || element._sokesHoverSetup) return;
+    element._sokesHoverSetup = true;
+
+    // Show glows on mouse enter
+    element.addEventListener('mouseenter', () => {
+        element.classList.add('sokes-node-hover');
+
+        // Activate sokes hover mode - this makes hidden links visible
+        app.canvas.sokesHoverActive = true;
+
+        // Apply glow styling to connected slots
+        if (node.outputs) {
+            node.outputs.forEach((output, index) => {
+                if (output._sokesConnected) {
+                    // Find the DOM element for this output slot and add glow class
+                    const slotElement = element.querySelector(`[data-output-index="${index}"]`);
+                    if (slotElement) {
+                        slotElement.classList.add('sokes-connected-slot-output');
+                        slotElement.style.setProperty('--sokes-link-color', output._sokesColor || '#4a9eff');
+                    }
+                }
+            });
+        }
+
+        if (node.inputs) {
+            node.inputs.forEach((input, index) => {
+                if (input._sokesConnected && input.link !== null && input.link !== undefined) {
+                    const slotElement = element.querySelector(`[data-input-index="${index}"]`);
+                    if (slotElement) {
+                        slotElement.classList.add('sokes-connected-slot-input');
+                        slotElement.style.setProperty('--sokes-link-color', input._sokesColor || '#4a9eff');
+                    }
+                }
+            });
+        }
+
+        // Force canvas redraw to show links
+        if (app.canvas) {
+            app.canvas.setDirty(true, true);
+        }
+    });
+
+    // Hide glows on mouse leave
+    element.addEventListener('mouseleave', () => {
+        element.classList.remove('sokes-node-hover');
+
+        // Check if any other sokes node is still hovered
+        let stillHovering = false;
+        document.querySelectorAll('.sokes-node-with-hidden-links').forEach(el => {
+            if (el.classList.contains('sokes-node-hover')) {
+                stillHovering = true;
+            }
+        });
+
+        if (!stillHovering) {
+            app.canvas.sokesHoverActive = false;
+        }
+
+        // Remove glow styling from slots
+        if (node.outputs) {
+            node.outputs.forEach((output, index) => {
+                const slotElement = element.querySelector(`[data-output-index="${index}"]`);
+                if (slotElement) {
+                    slotElement.classList.remove('sokes-connected-slot-output');
+                }
+            });
+        }
+
+        if (node.inputs) {
+            node.inputs.forEach((input, index) => {
+                const slotElement = element.querySelector(`[data-input-index="${index}"]`);
+                if (slotElement) {
+                    slotElement.classList.remove('sokes-connected-slot-input');
+                }
+            });
+        }
+
+        // Force canvas redraw to hide links again
+        if (app.canvas) {
+            app.canvas.setDirty(true, true);
+        }
+    });
+}
+
+// Inject styles once
+if (!document.getElementById('sokes-invisible-noodles-style')) {
+    document.head.insertAdjacentHTML('beforeend', SOKES_STYLES);
+}
+
+// Extension to handle invisible noodles - patches litegraph's Link class and canvas rendering
+app.registerExtension({
+    name: "Sokes.InvisibleNoodles.Render",
+
+    async setup() {
+        // Store original drawLink function
+        const originalDrawLink = LGraphCanvas.prototype.draw_link_on_canvas;
+
+        // Override to support hidden sokes links with glow color
+        if (originalDrawLink && !LGraphCanvas._sokesPatched) {
+            LGraphCanvas._sokesPatched = true;
+
+            LGraphCanvas.prototype.draw_link_on_canvas = function(canvas, start_point, end_point, color, fixed_color) {
+                // Check if this is a sokes hidden link - skip drawing the line itself
+                // The visual feedback will be the glow on slots
+
+                const ctx = canvas.getContext ? canvas : app.canvas.context;
+
+                // For sokes hidden links, draw with opacity 0 (invisible)
+                // We still need to call original for proper rendering system
+                ctx.save();
+
+                // Set alpha to 0.01 (nearly invisible but still interacts with hover detection if needed)
+                ctx.globalAlpha = 0.01;
+
+                originalDrawLink.call(this, canvas, start_point, end_point, color, fixed_color);
+
+                ctx.restore();
+            };
+        }
+
+        // Also patch the main draw_link method for color handling
+        const originalDrawLinkMain = LGraphCanvas.prototype.draw_link;
+        if (originalDrawLinkMain && !LGraphCanvas._sokesDrawLinkPatched) {
+            LGraphCanvas._sokesDrawLinkPatched = true;
+
+            LGraphCanvas.prototype.draw_link = function(link_info, canvas, skip_nodes, color, time) {
+                const link = app.graph.links[link_info.id];
+
+                // For sokes hidden links, pass a flag to make them invisible
+                if (link?._sokesHidden && !this.sokesHoverActive) {
+                    // Draw with very low opacity - essentially invisible
+                    const prevAlpha = this.ctx?.globalAlpha || 1;
+                    if (this.ctx) this.ctx.globalAlpha = 0.01;
+                    const result = originalDrawLinkMain.call(this, link_info, canvas, skip_nodes, color, time);
+                    if (this.ctx) this.ctx.globalAlpha = prevAlpha;
+                    return result;
+                }
+
+                return originalDrawLinkMain.call(this, link_info, canvas, skip_nodes, color, time);
+            };
+        }
+
+        // Override getLinkColor to use sokes custom colors
+        const originalGetLinkColor = LGraphCanvas.prototype.getLinkColor;
+        LGraphCanvas.prototype.getLinkColor = function(link) {
+            if (link?._sokesColor) {
+                return link._sokesColor;
+            }
+            return originalGetLinkColor.call(this, link);
+        };
+    }
+});
+
 app.registerExtension({
     name: "Sokes.StreetViewLoader.Dragger",
     async beforeRegisterNodeDef(nodeType, nodeData, app) {
@@ -26,8 +308,8 @@ app.registerExtension({
                         border: "1px dashed var(--border-color)",
                         borderRadius: "4px",
                         marginTop: "10px",
-                        position: "relative", 
-                        overflow: "hidden" 
+                        position: "relative",
+                        overflow: "hidden"
                     });
 
                     const dot = document.createElement("div");
@@ -49,7 +331,7 @@ app.registerExtension({
                         dot.style.left = `${x}%`;
                         dot.style.top = `${y}%`;
                     };
-                    
+
                     if (headingWidget.element && headingWidget.element.parentElement) {
                         headingWidget.element.parentElement.style.display = "none";
                     }
@@ -77,7 +359,7 @@ app.registerExtension({
 
                             let newPitch = pitchWidget.value - deltaY * 0.5;
                             pitchWidget.value = parseFloat(Math.max(-90, Math.min(90, newPitch)).toFixed(1));
-                            
+
                             if (headingWidget.callback) headingWidget.callback(headingWidget.value);
                             if (pitchWidget.callback) pitchWidget.callback(pitchWidget.value);
 
@@ -98,5 +380,264 @@ app.registerExtension({
                 }, 10);
             };
         }
-    },
-}); 
+    }
+});
+
+app.registerExtension({
+    name: "Sokes.SaveFilePath.AutoConnect",
+    async beforeRegisterNodeDef(nodeType, nodeData, app) {
+        if (nodeData.name === "Save File Path and Name | sokes 🦬") {
+            const onNodeCreated = nodeType.prototype.onNodeCreated;
+            nodeType.prototype.onNodeCreated = function () {
+                onNodeCreated?.apply(this, arguments);
+
+                // Add Auto-Connect button
+                const connectButton = document.createElement("button");
+                connectButton.textContent = "🔗 Connect to Global Folder Settings";
+                Object.assign(connectButton.style, {
+                    width: "100%",
+                    padding: "8px 12px",
+                    marginTop: "10px",
+                    backgroundColor: "#4a9eff",
+                    color: "white",
+                    border: "none",
+                    borderRadius: "4px",
+                    cursor: "pointer",
+                    fontSize: "12px",
+                    fontWeight: "bold"
+                });
+
+                this.addWidget("button", "auto_connect_global", "Auto-Connect", () => {
+                    this.autoConnectToGlobalFolder();
+                }).type = "custom";
+
+                // Replace the default widget element with our button
+                const btnWidget = this.widgets.find(w => w.name === "auto_connect_global");
+                if (btnWidget) {
+                    setTimeout(() => {
+                        if (btnWidget.element && btnWidget.element.parentElement) {
+                            const container = btnWidget.element.parentElement;
+                            container.innerHTML = "";
+                            container.appendChild(connectButton);
+
+                            connectButton.onclick = () => {
+                                this.autoConnectToGlobalFolder();
+                            };
+                        }
+                    }, 50);
+                }
+
+                // Method to auto-connect to Global Folder Settings node with hidden noodles
+                this.autoConnectToGlobalFolder = function() {
+                    const graph = app.graph;
+                    let connectedCount = 0;
+
+                    console.log("[Sokes Auto-Connect] Save File Path connecting to Global...", {
+                        nodeId: this.id,
+                        nodeInputs: this.inputs
+                    });
+
+                    // Find all Global Folder Settings nodes
+                    for (let i = 0; i < graph._nodes.length; i++) {
+                        const globalNode = graph._nodes[i];
+                        if (globalNode.type === "Global Folder and Project Settings | sokes 🦬") {
+                            // Find output slot INDEX on Global Folder node
+                            const mainFolderOutputIndex = globalNode.outputs?.findIndex(out => out.name === "main_folder MUST CONNECT TO PREVIEW NODE");
+                            const projectOutputIndex = globalNode.outputs?.findIndex(out => out.name === "project_name");
+
+                            // Find input slot INDEX on this Save File Path node
+                            const mainFolderInputIndex = this.inputs?.findIndex(inp => inp.name === "main_folder");
+                            const projectInputIndex = this.inputs?.findIndex(inp => inp.name === "project_name");
+
+                            console.log("[Sokes Auto-Connect] Found Global Folder node:", {
+                                globalNodeId: globalNode.id,
+                                mainFolderOutputIndex,
+                                projectOutputIndex,
+                                mainFolderInputIndex,
+                                projectInputIndex
+                            });
+
+                            if (mainFolderOutputIndex !== -1 && mainFolderInputIndex !== -1) {
+                                // Connect main_folder if not already connected (with hidden noodle)
+                                const inputSlot = this.inputs[mainFolderInputIndex];
+                                if (!inputSlot || inputSlot.link === null || inputSlot.link === undefined) {
+                                    console.log("[Sokes Auto-Connect] Connecting main_folder...", {
+                                        fromNode: globalNode.id,
+                                        fromSlot: mainFolderOutputIndex,
+                                        toNode: this.id,
+                                        toSlot: mainFolderInputIndex
+                                    });
+                                    createHiddenLink(globalNode, this, mainFolderOutputIndex, mainFolderInputIndex);
+                                    setupNodeHoverEffects(globalNode);
+                                    setupNodeHoverEffects(this);
+                                    connectedCount++;
+                                }
+                            }
+
+                            if (projectOutputIndex !== -1 && projectInputIndex !== -1) {
+                                // Connect project_name if not already connected (with hidden noodle)
+                                const inputSlot = this.inputs[projectInputIndex];
+                                if (!inputSlot || inputSlot.link === null || inputSlot.link === undefined) {
+                                    console.log("[Sokes Auto-Connect] Connecting project_name...", {
+                                        fromNode: globalNode.id,
+                                        fromSlot: projectOutputIndex,
+                                        toNode: this.id,
+                                        toSlot: projectInputIndex
+                                    });
+                                    createHiddenLink(globalNode, this, projectOutputIndex, projectInputIndex);
+                                    setupNodeHoverEffects(globalNode);
+                                    setupNodeHoverEffects(this);
+                                    connectedCount++;
+                                }
+                            }
+
+                            // Only connect to the first Global Folder node we find
+                            break;
+                        }
+                    }
+
+                    // Update button text to show result
+                    connectButton.textContent = connectedCount > 0
+                        ? `✅ Connected ${connectedCount} input(s)`
+                        : "🔗 Already connected or no Global Folder Settings found";
+
+                    setTimeout(() => {
+                        connectButton.textContent = "🔗 Connect to Global Folder Settings";
+                    }, 2000);
+                };
+            };
+        }
+    }
+});
+
+app.registerExtension({
+    name: "Sokes.GlobalFolderSettings.AutoConnect",
+    async beforeRegisterNodeDef(nodeType, nodeData, app) {
+        if (nodeData.name === "Global Folder and Project Settings | sokes 🦬") {
+            const onNodeCreated = nodeType.prototype.onNodeCreated;
+            nodeType.prototype.onNodeCreated = function () {
+                onNodeCreated?.apply(this, arguments);
+
+                // Add Auto-Connect button
+                const connectButton = document.createElement("button");
+                connectButton.textContent = "🔗 Auto-Connect All Save File Path Nodes";
+                Object.assign(connectButton.style, {
+                    width: "100%",
+                    padding: "8px 12px",
+                    marginTop: "10px",
+                    backgroundColor: "#4a9eff",
+                    color: "white",
+                    border: "none",
+                    borderRadius: "4px",
+                    cursor: "pointer",
+                    fontSize: "12px",
+                    fontWeight: "bold"
+                });
+
+                connectButton.onmousedown = (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    this.autoConnectSaveFilePathNodes();
+                };
+
+                this.addWidget("button", "auto_connect", "Auto-Connect All", () => {
+                    this.autoConnectSaveFilePathNodes();
+                }).type = "custom";
+
+                // Replace the default widget element with our button
+                const btnWidget = this.widgets.find(w => w.name === "auto_connect");
+                if (btnWidget) {
+                    setTimeout(() => {
+                        if (btnWidget.element && btnWidget.element.parentElement) {
+                            const container = btnWidget.element.parentElement;
+                            container.innerHTML = "";
+                            container.appendChild(connectButton);
+
+                            connectButton.onclick = () => {
+                                this.autoConnectSaveFilePathNodes();
+                            };
+                        }
+                    }, 50);
+                }
+
+                // Method to auto-connect all Save File Path nodes with hidden noodles
+                this.autoConnectSaveFilePathNodes = function() {
+                    const graph = app.graph;
+                    let connectedCount = 0;
+
+                    console.log("[Sokes Auto-Connect] Starting...", {
+                        thisOutputs: this.outputs,
+                        graphNodesCount: graph._nodes.length
+                    });
+
+                    // Find all Save File Path and Name nodes
+                    for (let i = 0; i < graph._nodes.length; i++) {
+                        const node = graph._nodes[i];
+                        if (node.type === "Save File Path and Name | sokes 🦬" && node !== this) {
+                            // Find output slot INDEX on this Global Folder node
+                            const mainFolderOutputIndex = this.outputs?.findIndex(out => out.name === "main_folder MUST CONNECT TO PREVIEW NODE");
+                            const projectOutputIndex = this.outputs?.findIndex(out => out.name === "project_name");
+
+                            // Find input slot INDEX on Save File Path node
+                            const mainFolderInputIndex = node.inputs?.findIndex(inp => inp.name === "main_folder");
+                            const projectInputIndex = node.inputs?.findIndex(inp => inp.name === "project_name");
+
+                            console.log("[Sokes Auto-Connect] Found Save File Path node:", {
+                                nodeId: node.id,
+                                mainFolderOutputIndex,
+                                projectOutputIndex,
+                                mainFolderInputIndex,
+                                projectInputIndex,
+                                mainFolderHasLink: node.inputs?.[mainFolderInputIndex]?.link,
+                                projectHasLink: node.inputs?.[projectInputIndex]?.link
+                            });
+
+                            if (mainFolderOutputIndex !== -1 && mainFolderInputIndex !== -1) {
+                                // Connect main_folder if not already connected (with hidden noodle)
+                                const inputSlot = node.inputs[mainFolderInputIndex];
+                                if (!inputSlot || inputSlot.link === null || inputSlot.link === undefined) {
+                                    console.log("[Sokes Auto-Connect] Connecting main_folder...", {
+                                        fromNode: this.id,
+                                        fromSlot: mainFolderOutputIndex,
+                                        toNode: node.id,
+                                        toSlot: mainFolderInputIndex
+                                    });
+                                    createHiddenLink(this, node, mainFolderOutputIndex, mainFolderInputIndex);
+                                    setupNodeHoverEffects(this);
+                                    setupNodeHoverEffects(node);
+                                    connectedCount++;
+                                }
+                            }
+
+                            if (projectOutputIndex !== -1 && projectInputIndex !== -1) {
+                                // Connect project_name if not already connected (with hidden noodle)
+                                const inputSlot = node.inputs[projectInputIndex];
+                                if (!inputSlot || inputSlot.link === null || inputSlot.link === undefined) {
+                                    console.log("[Sokes Auto-Connect] Connecting project_name...", {
+                                        fromNode: this.id,
+                                        fromSlot: projectOutputIndex,
+                                        toNode: node.id,
+                                        toSlot: projectInputIndex
+                                    });
+                                    createHiddenLink(this, node, projectOutputIndex, projectInputIndex);
+                                    setupNodeHoverEffects(this);
+                                    setupNodeHoverEffects(node);
+                                    connectedCount++;
+                                }
+                            }
+                        }
+                    }
+
+                    // Update button text to show result
+                    connectButton.textContent = connectedCount > 0
+                        ? `✅ Connected ${connectedCount} input(s)`
+                        : "🔗 All nodes already connected";
+
+                    setTimeout(() => {
+                        connectButton.textContent = "🔗 Auto-Connect All Save File Path Nodes";
+                    }, 2000);
+                };
+            };
+        }
+    }
+});
