@@ -529,14 +529,19 @@ class comfyui_folder_paths_sokes:
 ##############################################################
 
 
+import os
+import random
+import hashlib
+import re
+
 ##############################################################
 # START Get Files in Folder with Extension | Sokes 🦬
 
 class get_files_in_folder_with_extension_sokes:
     CATEGORY = "Sokes 🦬/File Paths"
-    RETURN_TYPES = ("STRING", "LIST",) # Removed "STRING" for selected_file
-    RETURN_NAMES = ("files_text_newlines", "file_list",) # Removed "selected_file"
-    OUTPUT_IS_LIST = (False, True,) # files_text_newlines is not a list, file_list is a list
+    RETURN_TYPES = ("STRING", "LIST",)
+    RETURN_NAMES = ("files_text_newlines", "file_list",)
+    OUTPUT_IS_LIST = (False, True,)
     FUNCTION = "get_files_with_extension"
 
     @classmethod
@@ -544,20 +549,32 @@ class get_files_in_folder_with_extension_sokes:
         return {
             "required": {
                 "folder_path": ("STRING", {"default": "", "multiline": False, "placeholder": "e.g., C:/ComfyUI/input"}),
-                "file_extensions": ("STRING", {"default": ".txt", "multiline": False, "placeholder": "e.g., mov|gif or .mp4|.avi"}),
+                "filename_filter": ("STRING", {"default": "", "multiline": False, "placeholder": "e.g., *image*|photo*.png|*.jpg"}),
+                "file_extensions_mode": (["Images", "Videos", "Audio", "Custom"], {"default": "Images"}),
+                "custom_extensions": ("STRING", {"default": "png|jpg|jpeg|webp", "multiline": False, "placeholder": "e.g., webm|mp4|gif", "hidden": {"file_extensions_mode": ["Images", "Videos", "Audio"]}}),
                 "search_subfolders": ("BOOLEAN", {"default": False, "label_on": "Enabled", "label_off": "Disabled"}),
-                "output_files": (["all files", "single file"], {"default": "all files"}), # Combo box for output mode
-                "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff}), # Seed for 'one' mode
-            }
+                "output_files": (["all files", "single file"], {"default": "all files"}),
+                "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff}),
+            },
+            "optional": {} 
         }
 
-    def get_files_with_extension(self, folder_path, file_extensions, search_subfolders, output_files, seed):
+    def get_files_with_extension(self, folder_path, filename_filter, file_extensions_mode, custom_extensions, search_subfolders, output_files, seed):
         if not folder_path or not os.path.isdir(folder_path):
             print(f"GetFilesByExtension ERROR: Invalid or non-existent folder path: {folder_path}")
             return ("", [])
 
-        # Prepare a list of normalized extensions
-        extensions_list = [ext.strip() for ext in file_extensions.split('|')]
+        effective_file_extensions = ""
+        if file_extensions_mode == "Images":
+            effective_file_extensions = "png|jpg|jpeg|webp|gif|bmp|tiff|tga|exr|svg|heif|heic"
+        elif file_extensions_mode == "Videos":
+            effective_file_extensions = "mp4|mov|avi|mkv|webm|flv|wmv|gif"
+        elif file_extensions_mode == "Audio":
+            effective_file_extensions = "mp3|wav|flac|aac|ogg|wma|m4a"
+        elif file_extensions_mode == "Custom":
+            effective_file_extensions = custom_extensions
+        
+        extensions_list = [ext.strip() for ext in effective_file_extensions.split('|') if ext.strip()]
         normalized_extensions = []
         for ext in extensions_list:
             if not ext.startswith('.'):
@@ -565,18 +582,69 @@ class get_files_in_folder_with_extension_sokes:
             else:
                 normalized_extensions.append(ext.lower())
 
+        filename_patterns = []
+        for pattern_str in filename_filter.split('|'):
+            pattern_str = pattern_str.strip()
+            if not pattern_str:
+                continue
+            
+            starts_with_wildcard = pattern_str.startswith('*')
+            ends_with_wildcard = pattern_str.endswith('*')
+
+            # Strip user-defined wildcards for the literal part
+            literal_part = pattern_str.strip('*')
+            
+            # Escape the literal part of the pattern
+            regex_escaped_literal = re.escape(literal_part)
+            
+            # Build the full regex pattern
+            current_regex_pattern = ""
+
+            if starts_with_wildcard:
+                current_regex_pattern += '.*'
+            # If no starting wildcard, and the original pattern started with a space,
+            # enforce a non-word boundary or start of string.
+            elif pattern_str.startswith(' ') and not pattern_str.startswith('*'): 
+                current_regex_pattern += r'(?:^|\s)' # Start of string or whitespace
+            
+            current_regex_pattern += regex_escaped_literal
+
+            if ends_with_wildcard:
+                current_regex_pattern += '.*'
+            # If no ending wildcard, and the original pattern ended with a space,
+            # enforce a non-word boundary or end of string.
+            elif pattern_str.endswith(' ') and not pattern_str.endswith('*'):
+                current_regex_pattern += r'(?:$|\s)' # End of string or whitespace
+
+            # If no wildcards and no explicit leading/trailing spaces,
+            # enforce full word boundaries for robustness.
+            # This is the "whole word" behavior, e.g., "man" matches "man.txt" but not "woman.txt"
+            if not starts_with_wildcard and not ends_with_wildcard and \
+               not pattern_str.startswith(' ') and not pattern_str.endswith(' '):
+                current_regex_pattern = r'\b' + current_regex_pattern + r'\b'
+            
+            filename_patterns.append(re.compile(current_regex_pattern, re.IGNORECASE))
+
         matching_files = []
         try:
-            if search_subfolders:
-                for root, _, files in os.walk(folder_path):
-                    for f_name in files:
-                        full_path = os.path.join(root, f_name)
-                        if any(f_name.lower().endswith(ext) for ext in normalized_extensions):
-                            matching_files.append(os.path.normpath(full_path))
-            else:
-                for f_name in os.listdir(folder_path):
-                    full_path = os.path.join(folder_path, f_name)
-                    if os.path.isfile(full_path) and any(f_name.lower().endswith(ext) for ext in normalized_extensions):
+            target_directory_iterator = os.walk(folder_path) if search_subfolders else [(folder_path, [], os.listdir(folder_path))]
+            
+            for root, _, files in target_directory_iterator:
+                for f_name in files:
+                    full_path = os.path.join(root, f_name)
+                    
+                    extension_match = any(f_name.lower().endswith(ext) for ext in normalized_extensions)
+                    
+                    filename_match = False
+                    if not filename_patterns:
+                        filename_match = True
+                    else:
+                        for pattern in filename_patterns:
+                            if pattern.search(f_name):
+                                filename_match = True
+                                break
+
+                    if os.path.isfile(full_path) and extension_match and filename_match:
                         matching_files.append(os.path.normpath(full_path))
         except Exception as e:
             print(f"GetFilesByExtension ERROR: Could not list files in {folder_path}: {e}")
@@ -587,17 +655,24 @@ class get_files_in_folder_with_extension_sokes:
         if output_files == "single file" and sorted_files:
             random.seed(seed)
             selected_file = random.choice(sorted_files)
-            # When "single file" is chosen, both outputs return only the selected file
             return (selected_file, [selected_file],)
         else:
-            # Otherwise, return all files as before
             files_text_newlines = "\n".join(sorted_files)
             return (files_text_newlines, sorted_files,)
 
     @classmethod
-    def IS_CHANGED(cls, folder_path, file_extensions, search_subfolders, output_files, seed):
-        # Hash of folder path, extensions, search_subfolders, output_files, seed, and modification times of matching files
-        extensions_list = [ext.strip() for ext in file_extensions.split('|')]
+    def IS_CHANGED(cls, folder_path, filename_filter, file_extensions_mode, custom_extensions, search_subfolders, output_files, seed):
+        effective_file_extensions = ""
+        if file_extensions_mode == "Images":
+            effective_file_extensions = "png|jpg|jpeg|webp|gif|bmp|tiff|tga|exr|svg|heif|heic"
+        elif file_extensions_mode == "Videos":
+            effective_file_extensions = "mp4|mov|avi|mkv|webm|flv|wmv|gif"
+        elif file_extensions_mode == "Audio":
+            effective_file_extensions = "mp3|wav|flac|aac|ogg|wma|m4a"
+        elif file_extensions_mode == "Custom":
+            effective_file_extensions = custom_extensions
+
+        extensions_list = [ext.strip() for ext in effective_file_extensions.split('|') if ext.strip()]
         normalized_extensions = []
         for ext in extensions_list:
             if not ext.startswith('.'):
@@ -605,20 +680,59 @@ class get_files_in_folder_with_extension_sokes:
             else:
                 normalized_extensions.append(ext.lower())
 
-        hash_input = f"{folder_path}-{'_'.join(sorted(normalized_extensions))}-{search_subfolders}-{output_files}-{seed}"
+        hash_input = f"{folder_path}-{'_'.join(sorted(normalized_extensions))}-{filename_filter}-{search_subfolders}-{output_files}-{seed}"
         mtimes = []
+        
         if os.path.isdir(folder_path):
+            filename_patterns = []
+            for pattern_str in filename_filter.split('|'):
+                pattern_str = pattern_str.strip()
+                if not pattern_str:
+                    continue
+                
+                starts_with_wildcard = pattern_str.startswith('*')
+                ends_with_wildcard = pattern_str.endswith('*')
+
+                literal_part = pattern_str.strip('*')
+                regex_escaped_literal = re.escape(literal_part)
+                
+                current_regex_pattern = ""
+
+                if starts_with_wildcard:
+                    current_regex_pattern += '.*'
+                elif pattern_str.startswith(' ') and not pattern_str.startswith('*'): 
+                    current_regex_pattern += r'(?:^|\s)'
+                
+                current_regex_pattern += regex_escaped_literal
+
+                if ends_with_wildcard:
+                    current_regex_pattern += '.*'
+                elif pattern_str.endswith(' ') and not pattern_str.endswith('*'):
+                    current_regex_pattern += r'(?:$|\s)'
+
+                if not starts_with_wildcard and not ends_with_wildcard and \
+                   not pattern_str.startswith(' ') and not pattern_str.endswith(' '):
+                    current_regex_pattern = r'\b' + current_regex_pattern + r'\b'
+                    
+                filename_patterns.append(re.compile(current_regex_pattern, re.IGNORECASE))
+
             try:
-                if search_subfolders:
-                    for root, _, files in os.walk(folder_path):
-                        for f_name in files:
-                            full_path = os.path.join(root, f_name)
-                            if any(f_name.lower().endswith(ext) for ext in normalized_extensions):
-                                mtimes.append(str(os.path.getmtime(full_path)))
-                else:
-                    for f_name in os.listdir(folder_path):
-                        full_path = os.path.join(folder_path, f_name)
-                        if os.path.isfile(full_path) and any(f_name.lower().endswith(ext) for ext in normalized_extensions):
+                target_directory_iterator = os.walk(folder_path) if search_subfolders else [(folder_path, [], os.listdir(folder_path))]
+                for root, _, files in target_directory_iterator:
+                    for f_name in files:
+                        full_path = os.path.join(root, f_name)
+                        extension_match = any(f_name.lower().endswith(ext) for ext in normalized_extensions)
+                        
+                        filename_match = False
+                        if not filename_patterns:
+                            filename_match = True
+                        else:
+                            for pattern in filename_patterns:
+                                if pattern.search(f_name):
+                                    filename_match = True
+                                    break
+
+                        if os.path.isfile(full_path) and extension_match and filename_match:
                             mtimes.append(str(os.path.getmtime(full_path)))
             except Exception:
                 pass
@@ -1606,6 +1720,182 @@ class runpod_serverless_sokes:
 
 
 ##############################################################
+# START Save File Path and Name | Sokes 🦬
+
+# Global state storage (server-side, shared across all nodes - like "Use Everywhere")
+_global_folder_state = {
+    "main_folder": "+ Z_Image_Turbo",
+    "project_name": "Z_Image_Turbo GGUF",
+    "_version": 0  # Version counter for change detection
+}
+
+
+# START Global Folder and Project Settings | Sokes 🦬
+
+class global_folder_and_project_settings_sokes:
+    CATEGORY = "Sokes 🦬/Utilities"
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "main_folder": ("STRING", {
+                    "default": _global_folder_state["main_folder"],
+                    "multiline": False,
+                }),
+                "project_name": ("STRING", {
+                    "default": _global_folder_state["project_name"],
+                    "multiline": False,
+                }),
+            }
+        }
+
+    RETURN_TYPES = ("STRING", "STRING")
+    RETURN_NAMES = ("main_folder MUST CONNECT TO PREVIEW NODE", "project_name")
+    FUNCTION = "execute"
+
+    @classmethod
+    def IS_CHANGED(cls, main_folder, project_name):
+        # Always report changed to ensure this node runs and updates global state
+        return datetime.now().strftime("%Y%m%d%H%M%S")
+
+    def execute(self, main_folder, project_name):
+        print(f"[Sokes] Global Folder Settings EXECUTING: main_folder='{main_folder}', project_name='{project_name}'")
+        # Update global state (invisible connection to all Save File Path nodes)
+        _global_folder_state["main_folder"] = main_folder
+        _global_folder_state["project_name"] = project_name
+        _global_folder_state["_version"] += 1  # Increment version to trigger updates
+        print(f"[Sokes] Global Folder Settings UPDATED state (version {_global_folder_state['_version']})")
+        return (main_folder, project_name)
+
+
+# END Global Folder and Project Settings | Sokes 🦬
+##############################################################
+
+class save_file_path_name_sokes:
+    CATEGORY = "Sokes 🦬/Utilities"
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "main_folder": ("STRING", {
+                    "default": "",  # Empty default - will use global state if not connected
+                    "multiline": False,
+                    "tooltip": "Main folder (leave empty to auto-sync from Global Folder and Project Settings)"
+                }),
+                "project_name": ("STRING", {
+                    "default": "",  # Empty default - will use global state if not connected
+                    "multiline": False,
+                    "tooltip": "Project name (leave empty to auto-sync from Global Folder and Project Settings)"
+                }),
+                "filename": ("STRING", {
+                    "default": "01_img",
+                    "multiline": False,
+                    "tooltip": "Base filename without extension"
+                }),
+                "date_format": ("STRING", {
+                    "default": "%y%m%d_%H%M%S",
+                    "multiline": False,
+                    "tooltip": "Date/time format using Python strftime codes. E.g: %y%m%d_%H%M%S (260306_165930)"
+                }),
+            }#,
+            #"optional": {
+            #    "sync_trigger": ("STRING", {
+            #        "tooltip": "Connect main_folder or project_name from Global Folder and Project Settings here to ensure proper execution order"
+            #    }),
+            #}
+        }
+
+    RETURN_TYPES = ("STRING", "STRING", "STRING", "STRING")
+    RETURN_NAMES = ("combined_path 1a_img", "filename_with_date 1b_img", "path_and_filename 2_vid_audio", "full_path 3_txt")
+    FUNCTION = "execute"
+
+    def execute(self, main_folder, project_name, filename, date_format, sync_trigger=None):
+        # Use global state when inputs are empty (invisible connection)
+        if not main_folder:
+            main_folder = _global_folder_state["main_folder"]
+            print(f"[Sokes] Save File Path using global main_folder: '{main_folder}' (version {_global_folder_state['_version']})")
+        if not project_name:
+            project_name = _global_folder_state["project_name"]
+            print(f"[Sokes] Save File Path using global project_name: '{project_name}'")
+
+        # Get output directory from ComfyUI
+        try:
+            output_dir = folder_paths.get_output_directory()
+        except Exception:
+            output_dir = os.path.join(os.path.dirname(__file__), "output")
+
+        # Generate formatted date with time
+        try:
+            formatted_date_full = datetime.now().strftime(date_format)
+            # Strip time portion for project folder (keep only YYYY-MM-DD format)
+            today = datetime.now().date()
+            formatted_date_only = today.strftime("%Y-%m-%d")
+        except Exception as e:
+            raise ValueError(f"Invalid date format: {e}")
+
+        # Short date and time components (YYMMDD and HHMMSS)
+        short_date = datetime.now().strftime("%y%m%d")
+        short_time = datetime.now().strftime("%H%M%S")
+
+        # Build project folder name with date prefix
+        project_folder = f"{formatted_date_only} - {project_name}" if project_name else formatted_date_only
+
+        # filename_with_date: [short-date]_[time]_[project_name]_[filename]
+        filename_with_date = f"{short_date}_{short_time}_{project_name}_{filename}" if project_name and filename else f"{short_date}_{short_time}_{filename}" if filename else f"{short_date}_{short_time}_{project_name}" if project_name else f"{short_date}_{short_time}"
+
+        # Combined path: main_folder/project_folder/ (just the folder path with trailing slash)
+        if main_folder and project_name:
+            combined_path = f"{main_folder}/{project_folder}/"
+        elif main_folder:
+            combined_path = f"{main_folder}/"
+        elif project_name:
+            combined_path = f"{project_folder}/"
+        else:
+            combined_path = ""
+
+        # path_and_filename for videos/audio: main_folder/project_folder/filename_with_date
+        if main_folder and project_name:
+            path_and_filename = f"{main_folder}/{project_folder}/{filename_with_date}"
+        elif main_folder:
+            path_and_filename = f"{main_folder}/{filename_with_date}"
+        elif project_name:
+            path_and_filename = f"{project_folder}/{filename_with_date}"
+        else:
+            path_and_filename = filename_with_date
+
+        # Full path with actual output directory (include main_folder in filesystem)
+        if main_folder:
+            full_project_dir = os.path.join(output_dir, main_folder, project_folder)
+        elif project_name:
+            full_project_dir = os.path.join(output_dir, project_folder)
+        else:
+            full_project_dir = output_dir
+
+        # Create the folder structure if it doesn't exist
+        try:
+            os.makedirs(full_project_dir, exist_ok=True)
+        except Exception as e:
+            print(f"Warning: Could not create directory '{full_project_dir}': {e}")
+
+        full_path = os.path.join(full_project_dir, filename_with_date)
+
+        return (combined_path, filename_with_date, path_and_filename, full_path)
+
+    @classmethod
+    def IS_CHANGED(cls, main_folder, project_name, filename, date_format):
+        # Include global state version to force re-execution when Global Folder and Project Settings changes
+        version = _global_folder_state["_version"]
+        # Return value that changes when global state changes or time advances
+        return f"{version}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+
+
+# END Save File Path and Name | Sokes 🦬
+##############################################################
+
+
+##############################################################
 # Node Mappings
 
 NODE_CLASS_MAPPINGS = {
@@ -1613,6 +1903,7 @@ NODE_CLASS_MAPPINGS = {
     "Current Date and Time | sokes 🦬": current_date_time_sokes,
     "Generate Random Background | sokes 🦬": random_art_generator_sokes,
     "Get Files in Folder with Extension | sokes 🦬": get_files_in_folder_with_extension_sokes,
+    "Global Folder and Project Settings | sokes 🦬": global_folder_and_project_settings_sokes,
     "Hex Color Swatch | sokes 🦬": hex_color_swatch_sokes,
     "Hex to Color Name | sokes 🦬": hex_to_color_name_sokes,
     "Image Picker | sokes 🦬": image_picker_sokes,
@@ -1621,6 +1912,7 @@ NODE_CLASS_MAPPINGS = {
     "Random Hex Color | sokes 🦬": random_hex_color_sokes,
     "Random Number | sokes 🦬": random_number_sokes,
     "Replace Text with RegEx | sokes 🦬": replace_text_regex_sokes,
+    "Save File Path and Name | sokes 🦬": save_file_path_name_sokes,
     "Runpod Serverless | sokes 🦬": runpod_serverless_sokes,
     "Street View Loader | sokes 🦬": streetview_loader_sokes,
 }
@@ -1630,6 +1922,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "Current Date and Time | sokes 🦬": "Current Date and Time 🦬",
     "Generate Random Background | sokes 🦬": "Generate Random Background 🦬",
     "Get Files in Folder with Extension | sokes 🦬": "Get Files in Folder with Extension 🦬",
+    "Global Folder and Project Settings | sokes 🦬": "Global Folder and Project Settings 🦬",
     "Hex Color Swatch | sokes 🦬": "Hex Color Swatch 🦬",
     "Hex to Color Name | sokes 🦬": "Hex to Color Name 🦬",
     "Image Picker | sokes 🦬": "Image Picker 🦬",
@@ -1638,6 +1931,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "Random Hex Color | sokes 🦬": "Random Hex Color 🦬",
     "Random Number | sokes 🦬": "Random Number 🦬",
     "Replace Text with RegEx | sokes 🦬": "Replace Text with RegEx 🦬",
+    "Save File Path and Name | sokes 🦬": "Save File Path and Name 🦬",
     "Runpod Serverless | sokes 🦬": "Runpod Serverless 🦬",
     "Street View Loader | sokes 🦬": "Street View Loader 🦬",
 }
