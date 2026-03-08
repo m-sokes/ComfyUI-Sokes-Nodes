@@ -7,11 +7,13 @@ A small node suite for ComfyUI featuring the following nodes:
 | **Current Date & Time** | Add the current date and or time to the filename with custom formatting. E.g. YYYY-MM-DD<br /><h6>Tip: Also supports python formated date & time properties</h6> |
 | **Empty Latent Selector (9 Inputs)** | Useful for generating a random latent dimentions based on a fixed set |
 | **Get Files in Folder with Extension** | Gets a list of files with a specific extension from a given folder |
+| **Global Folder and Project Settings** | Set save folder and project name <h6>Tip: Used in conjunction with Save File Path and Name node(s)</h6> |
 | **Hex to Color Name** | Convert hex to descriptive color names for image-generation prompts |
 | **Load Random Image** | Load a random image(s) and output optional alpha channel and reference image path(s)<br /><h6>Tip: You can use wildcards "*" and or "\|"'s in the folder path input</h6> |
 | **Random Number** | A user friendly random number generator that supports int, float, and bool |
 | **Replace Text with RegEx** | Useful for using RegEx for text replacement |
 | **Runpod Serverless** | Call a Runpod serverless endpoint (text or image+text). Outputs: response_text, full_response, status, execution_time.<br /><h6>Tip: Set RUNPOD_API_KEY env var</h6> |
+| **Save File Path and Name** | Save path and filename formatting. <h6>Tip: Used in conjunction with Global Folder and Project Settings node</h6> |
 | **Street View Loader** | Loads Google Street View images based on address or lat/lon. Outputs an image.<br /><h6>Tip: Set GOOGLE_STREET_VIEW_API_KEY env var</h6> |
 
 
