@@ -1751,7 +1751,7 @@ class global_folder_and_project_settings_sokes:
         }
 
     RETURN_TYPES = ("STRING", "STRING")
-    RETURN_NAMES = ("main_folder MUST CONNECT TO PREVIEW NODE", "project_name")
+    RETURN_NAMES = ("main_folder", "project_name")
     FUNCTION = "execute"
 
     @classmethod
