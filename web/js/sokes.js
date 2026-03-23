@@ -431,68 +431,81 @@ app.registerExtension({
                 this.autoConnectToGlobalFolder = function() {
                     const graph = app.graph;
                     let connectedCount = 0;
+                    let globalNode = null;
 
                     console.log("[Sokes Auto-Connect] Save File Path connecting to Global...", {
                         nodeId: this.id,
-                        nodeInputs: this.inputs
+                        nodeInputs: this.inputs,
+                        totalNodes: graph._nodes.length
                     });
 
-                    // Find all Global Folder Settings nodes
+                    // Find existing Global Folder Settings node
                     for (let i = 0; i < graph._nodes.length; i++) {
-                        const globalNode = graph._nodes[i];
-                        if (globalNode.type === "Global Folder and Project Settings | sokes 🦬") {
-                            // Find output slot INDEX on Global Folder node
-                            const mainFolderOutputIndex = globalNode.outputs?.findIndex(out => out.name === "main_folder MUST CONNECT TO PREVIEW NODE");
-                            const projectOutputIndex = globalNode.outputs?.findIndex(out => out.name === "project_name");
-
-                            // Find input slot INDEX on this Save File Path node
-                            const mainFolderInputIndex = this.inputs?.findIndex(inp => inp.name === "main_folder");
-                            const projectInputIndex = this.inputs?.findIndex(inp => inp.name === "project_name");
-
-                            console.log("[Sokes Auto-Connect] Found Global Folder node:", {
-                                globalNodeId: globalNode.id,
-                                mainFolderOutputIndex,
-                                projectOutputIndex,
-                                mainFolderInputIndex,
-                                projectInputIndex
-                            });
-
-                            if (mainFolderOutputIndex !== -1 && mainFolderInputIndex !== -1) {
-                                // Connect main_folder if not already connected (with hidden noodle)
-                                const inputSlot = this.inputs[mainFolderInputIndex];
-                                if (!inputSlot || inputSlot.link === null || inputSlot.link === undefined) {
-                                    console.log("[Sokes Auto-Connect] Connecting main_folder...", {
-                                        fromNode: globalNode.id,
-                                        fromSlot: mainFolderOutputIndex,
-                                        toNode: this.id,
-                                        toSlot: mainFolderInputIndex
-                                    });
-                                    createHiddenLink(globalNode, this, mainFolderOutputIndex, mainFolderInputIndex);
-                                    setupNodeHoverEffects(globalNode);
-                                    setupNodeHoverEffects(this);
-                                    connectedCount++;
-                                }
-                            }
-
-                            if (projectOutputIndex !== -1 && projectInputIndex !== -1) {
-                                // Connect project_name if not already connected (with hidden noodle)
-                                const inputSlot = this.inputs[projectInputIndex];
-                                if (!inputSlot || inputSlot.link === null || inputSlot.link === undefined) {
-                                    console.log("[Sokes Auto-Connect] Connecting project_name...", {
-                                        fromNode: globalNode.id,
-                                        fromSlot: projectOutputIndex,
-                                        toNode: this.id,
-                                        toSlot: projectInputIndex
-                                    });
-                                    createHiddenLink(globalNode, this, projectOutputIndex, projectInputIndex);
-                                    setupNodeHoverEffects(globalNode);
-                                    setupNodeHoverEffects(this);
-                                    connectedCount++;
-                                }
-                            }
-
-                            // Only connect to the first Global Folder node we find
+                        const candidate = graph._nodes[i];
+                        if (candidate.type === "Global Folder and Project Settings | sokes 🦬") {
+                            globalNode = candidate;
+                            console.log("[Sokes Auto-Connect] Found existing Global Folder node:", candidate.id);
                             break;
+                        }
+                    }
+
+                    // If no Global Folder node exists, create one
+                    if (!globalNode) {
+                        console.log("[Sokes Auto-Connect] No Global Folder Settings node found, creating one...");
+                        globalNode = LiteGraph.createNode("Global Folder and Project Settings | sokes 🦬");
+                        graph.add(globalNode);
+
+                        // Position the new node above and slightly to the left of this Save File Path node
+                        globalNode.pos = [this.pos[0] - 20, this.pos[1] - globalNode.size[1] - 20];
+
+                        // Highlight the new node briefly
+                        if (globalNode.flags?.collapsible) globalNode.flags.collapsible = true;
+                        app.canvas?.draw(true, true);
+                    }
+
+                    // Find output slot INDEX on Global Folder node
+                    const mainFolderOutputIndex = globalNode.outputs?.findIndex(out => out.name === "main_folder");
+                    const projectOutputIndex = globalNode.outputs?.findIndex(out => out.name === "project_name");
+                    const dateOutputIndex = globalNode.outputs?.findIndex(out => out.name === "date_format");
+
+                    // Find input slot INDEX on this Save File Path node
+                    const mainFolderInputIndex = this.inputs?.findIndex(inp => inp.name === "main_folder");
+                    const projectInputIndex = this.inputs?.findIndex(inp => inp.name === "project_name");
+                    const dateInputIndex = this.inputs?.findIndex(inp => inp.name === "date_format");
+
+                    if (mainFolderOutputIndex !== -1 && mainFolderInputIndex !== -1) {
+                        // Connect main_folder if not already connected (with hidden noodle)
+                        const inputSlot = this.inputs[mainFolderInputIndex];
+                        if (!inputSlot || inputSlot.link === null || inputSlot.link === undefined) {
+                            console.log("[Sokes Auto-Connect] Connecting main_folder...");
+                            createHiddenLink(globalNode, this, mainFolderOutputIndex, mainFolderInputIndex);
+                            setupNodeHoverEffects(globalNode);
+                            setupNodeHoverEffects(this);
+                            connectedCount++;
+                        }
+                    }
+
+                    if (projectOutputIndex !== -1 && projectInputIndex !== -1) {
+                        // Connect project_name if not already connected (with hidden noodle)
+                        const inputSlot = this.inputs[projectInputIndex];
+                        if (!inputSlot || inputSlot.link === null || inputSlot.link === undefined) {
+                            console.log("[Sokes Auto-Connect] Connecting project_name...");
+                            createHiddenLink(globalNode, this, projectOutputIndex, projectInputIndex);
+                            setupNodeHoverEffects(globalNode);
+                            setupNodeHoverEffects(this);
+                            connectedCount++;
+                        }
+                    }
+
+                    if (dateOutputIndex !== -1 && dateInputIndex !== -1) {
+                        // Connect date_format if not already connected (with hidden noodle)
+                        const inputSlot = this.inputs[dateInputIndex];
+                        if (!inputSlot || inputSlot.link === null || inputSlot.link === undefined) {
+                            console.log("[Sokes Auto-Connect] Connecting date_format...");
+                            createHiddenLink(globalNode, this, dateOutputIndex, dateInputIndex);
+                            setupNodeHoverEffects(globalNode);
+                            setupNodeHoverEffects(this);
+                            connectedCount++;
                         }
                     }
 
@@ -520,7 +533,7 @@ app.registerExtension({
 
                 // Add Auto-Connect button
                 const connectButton = document.createElement("button");
-                connectButton.textContent = "🔗 Auto-Connect All Save File Path Nodes";
+                connectButton.textContent = "🔗 Auto-Connect Save File Path Nodes";
                 Object.assign(connectButton.style, {
                     width: "100%",
                     padding: "8px 12px",
@@ -540,7 +553,7 @@ app.registerExtension({
                     this.autoConnectSaveFilePathNodes();
                 };
 
-                this.addWidget("button", "auto_connect", "Auto-Connect All", () => {
+                this.addWidget("button", "auto_connect", "Auto-Connect", () => {
                     this.autoConnectSaveFilePathNodes();
                 }).type = "custom";
 
@@ -571,25 +584,57 @@ app.registerExtension({
                     });
 
                     // Find all Save File Path and Name nodes
+                    let saveFilePathNodes = [];
                     for (let i = 0; i < graph._nodes.length; i++) {
                         const node = graph._nodes[i];
-                        if (node.type === "Save File Path and Name | sokes 🦬" && node !== this) {
-                            // Find output slot INDEX on this Global Folder node
-                            const mainFolderOutputIndex = this.outputs?.findIndex(out => out.name === "main_folder MUST CONNECT TO PREVIEW NODE");
+                        if (node.type === "Save File Path and Name | sokes 🦬") {
+                            saveFilePathNodes.push(node);
+                        }
+                    }
+
+                    // If no Save File Path nodes exist, create one
+                    if (saveFilePathNodes.length === 0) {
+                        console.log("[Sokes Auto-Connect] No Save File Path nodes found, creating one...");
+                        const newNode = LiteGraph.createNode("Save File Path and Name | sokes 🦬");
+                        graph.add(newNode);
+
+                        // Position the new node to the right of the Global Folder node
+                        newNode.pos = [this.pos[0] + this.size[0] + 20, this.pos[1]];
+
+                        // Add the newly created node to our list
+                        saveFilePathNodes.push(newNode);
+
+                        // Highlight the new node briefly
+                        newNode.flags?.collapsible?.set?.(true);
+                        app.canvas?.draw(true, true);
+                    }
+
+                    // Now connect all Save File Path nodes
+                    for (let i = 0; i < saveFilePathNodes.length; i++) {
+                        const node = saveFilePathNodes[i];
+                        if (node === this) continue;
+
+                        // Find output slot INDEX on this Global Folder node
+                            const mainFolderOutputIndex = this.outputs?.findIndex(out => out.name === "main_folder");
                             const projectOutputIndex = this.outputs?.findIndex(out => out.name === "project_name");
+                            const dateOutputIndex = this.outputs?.findIndex(out => out.name === "date_format");
 
                             // Find input slot INDEX on Save File Path node
                             const mainFolderInputIndex = node.inputs?.findIndex(inp => inp.name === "main_folder");
                             const projectInputIndex = node.inputs?.findIndex(inp => inp.name === "project_name");
+                            const dateInputIndex = node.inputs?.findIndex(inp => inp.name === "date_format");
 
                             console.log("[Sokes Auto-Connect] Found Save File Path node:", {
                                 nodeId: node.id,
                                 mainFolderOutputIndex,
                                 projectOutputIndex,
+                                dateOutputIndex,
                                 mainFolderInputIndex,
                                 projectInputIndex,
+                                dateInputIndex,
                                 mainFolderHasLink: node.inputs?.[mainFolderInputIndex]?.link,
-                                projectHasLink: node.inputs?.[projectInputIndex]?.link
+                                projectHasLink: node.inputs?.[projectInputIndex]?.link,
+                                dateHasLink: node.inputs?.[dateInputIndex]?.link
                             });
 
                             if (mainFolderOutputIndex !== -1 && mainFolderInputIndex !== -1) {
@@ -625,7 +670,23 @@ app.registerExtension({
                                     connectedCount++;
                                 }
                             }
-                        }
+
+                            if (dateOutputIndex !== -1 && dateInputIndex !== -1) {
+                                // Connect date_format if not already connected (with hidden noodle)
+                                const inputSlot = node.inputs[dateInputIndex];
+                                if (!inputSlot || inputSlot.link === null || inputSlot.link === undefined) {
+                                    console.log("[Sokes Auto-Connect] Connecting date_format...", {
+                                        fromNode: this.id,
+                                        fromSlot: dateOutputIndex,
+                                        toNode: node.id,
+                                        toSlot: dateInputIndex
+                                    });
+                                    createHiddenLink(this, node, dateOutputIndex, dateInputIndex);
+                                    setupNodeHoverEffects(this);
+                                    setupNodeHoverEffects(node);
+                                    connectedCount++;
+                                }
+                            }
                     }
 
                     // Update button text to show result
