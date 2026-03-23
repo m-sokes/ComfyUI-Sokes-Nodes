@@ -254,11 +254,11 @@ class current_date_time_sokes:
             }
         }
     RETURN_TYPES = ("STRING",)
-    RETURN_NAMES = ("formatted_date_time",)
-    FUNCTION = "current_date_time_sokes"
+    RETURN_NAMES = ("date_format",)
+    FUNCTION = "execute"
     CATEGORY = "Sokes 🦬"
 
-    def current_date_time_sokes(self, date_time_format):
+    def execute(self, date_time_format):
         now = datetime.now()
         temp_format = date_time_format
         temp_format = re.sub('YYYY', '%Y', temp_format, flags=re.IGNORECASE)
@@ -1726,6 +1726,7 @@ class runpod_serverless_sokes:
 _global_folder_state = {
     "main_folder": "+ Z_Image_Turbo",
     "project_name": "Z_Image_Turbo GGUF",
+    "date_format": 'datetime.now().strftime("%y%m%d_%H%M%S")',
     "_version": 0  # Version counter for change detection
 }
 
@@ -1747,26 +1748,43 @@ class global_folder_and_project_settings_sokes:
                     "default": _global_folder_state["project_name"],
                     "multiline": False,
                 }),
+                "date_format": ("STRING", {
+                    "default": "%y%m%d_%H%M%S",
+                    "multiline": False,
+                    "tooltip": "Date/time format using Python strftime codes. E.g: %y%m%d_%H%M%S (260322_143052)"
+                }),
             }
         }
 
-    RETURN_TYPES = ("STRING", "STRING")
-    RETURN_NAMES = ("main_folder", "project_name")
+    RETURN_TYPES = ("STRING", "STRING", "STRING")
+    RETURN_NAMES = ("main_folder", "project_name", "date_format")
     FUNCTION = "execute"
+    OUTPUT_TOOLTIPS = (
+        "Connect to Save File Path node's main_folder input",
+        "Project name for folder creation",
+        "Connect to Save File Path node's date_format input"
+    )
 
     @classmethod
-    def IS_CHANGED(cls, main_folder, project_name):
+    def IS_CHANGED(cls, main_folder, project_name, date_format):
         # Always report changed to ensure this node runs and updates global state
         return datetime.now().strftime("%Y%m%d%H%M%S")
 
-    def execute(self, main_folder, project_name):
-        print(f"[Sokes] Global Folder Settings EXECUTING: main_folder='{main_folder}', project_name='{project_name}'")
+    def execute(self, main_folder, project_name, date_format):
+        # Generate formatted date with time
+        try:
+            date_format = datetime.now().strftime(date_format)
+        except Exception as e:
+            raise ValueError(f"Invalid date format: {e}")
+
+        print(f"[Sokes] Global Folder Settings EXECUTING: main_folder='{main_folder}', project_name='{project_name}', date_format='{date_format}'")
         # Update global state (invisible connection to all Save File Path nodes)
         _global_folder_state["main_folder"] = main_folder
         _global_folder_state["project_name"] = project_name
+        _global_folder_state["date_format"] = date_format
         _global_folder_state["_version"] += 1  # Increment version to trigger updates
         print(f"[Sokes] Global Folder Settings UPDATED state (version {_global_folder_state['_version']})")
-        return (main_folder, project_name)
+        return (main_folder, project_name, date_format)
 
 
 # END Global Folder and Project Settings | Sokes 🦬
@@ -1782,43 +1800,47 @@ class save_file_path_name_sokes:
                 "main_folder": ("STRING", {
                     "default": "",  # Empty default - will use global state if not connected
                     "multiline": False,
-                    "tooltip": "Main folder (leave empty to auto-sync from Global Folder and Project Settings)"
+                    "tooltip": "Connect main_folder (output 1) from Global Folder and Project Settings node here"
                 }),
                 "project_name": ("STRING", {
                     "default": "",  # Empty default - will use global state if not connected
                     "multiline": False,
-                    "tooltip": "Project name (leave empty to auto-sync from Global Folder and Project Settings)"
+                    "tooltip": "Project name (connect output 2 from Global Folder and Project Settings if desired)"
+                }),
+                "date_format": ("STRING", {
+                    "default": "%y%m%d_%H%M%S",
+                    "multiline": False,
+                    "tooltip": "Formatted date/time from Global Folder node (output 3)"
                 }),
                 "filename": ("STRING", {
                     "default": "01_img",
                     "multiline": False,
                     "tooltip": "Base filename without extension"
                 }),
-                "date_format": ("STRING", {
-                    "default": "%y%m%d_%H%M%S",
-                    "multiline": False,
-                    "tooltip": "Date/time format using Python strftime codes. E.g: %y%m%d_%H%M%S (260306_165930)"
-                }),
-            }#,
-            #"optional": {
-            #    "sync_trigger": ("STRING", {
-            #        "tooltip": "Connect main_folder or project_name from Global Folder and Project Settings here to ensure proper execution order"
-            #    }),
-            #}
+            }
         }
 
     RETURN_TYPES = ("STRING", "STRING", "STRING", "STRING")
-    RETURN_NAMES = ("combined_path 1a_img", "filename_with_date 1b_img", "path_and_filename 2_vid_audio", "full_path 3_txt")
+    RETURN_NAMES = ("combined_path 1a_img", "filename 1b_img", "path_and_filename 2_vid_audio", "full_path 3_txt")
     FUNCTION = "execute"
 
-    def execute(self, main_folder, project_name, filename, date_format, sync_trigger=None):
+    def execute(self, main_folder, project_name, date_format, filename):
         # Use global state when inputs are empty (invisible connection)
         if not main_folder:
             main_folder = _global_folder_state["main_folder"]
             print(f"[Sokes] Save File Path using global main_folder: '{main_folder}' (version {_global_folder_state['_version']})")
+        else:
+            print(f"[Sokes] Save File Path using connected main_folder: '{main_folder}'")
         if not project_name:
             project_name = _global_folder_state["project_name"]
             print(f"[Sokes] Save File Path using global project_name: '{project_name}'")
+        else:
+            print(f"[Sokes] Save File Path using connected project_name: '{project_name}'")
+        if not date_format:
+            date_format = datetime.now().strftime("%y%m%d_%H%M%S")
+            print(f"[Sokes] Save File Path using default date_format: '{date_format}'")
+        else:
+            print(f"[Sokes] Save File Path using date_format: '{date_format}'")
 
         # Get output directory from ComfyUI
         try:
@@ -1826,49 +1848,47 @@ class save_file_path_name_sokes:
         except Exception:
             output_dir = os.path.join(os.path.dirname(__file__), "output")
 
-        # Generate formatted date with time
-        try:
-            formatted_date_full = datetime.now().strftime(date_format)
-            # Strip time portion for project folder (keep only YYYY-MM-DD format)
-            today = datetime.now().date()
-            formatted_date_only = today.strftime("%Y-%m-%d")
-        except Exception as e:
-            raise ValueError(f"Invalid date format: {e}")
+        # Build date format for folder path 1a: YYYY-MM-DD (e.g., 2026-03-22)
+        date_format_folder = datetime.now().strftime("%Y-%m-%d")
 
-        # Short date and time components (YYMMDD and HHMMSS)
-        short_date = datetime.now().strftime("%y%m%d")
-        short_time = datetime.now().strftime("%H%M%S")
-
-        # Build project folder name with date prefix
-        project_folder = f"{formatted_date_only} - {project_name}" if project_name else formatted_date_only
-
-        # filename_with_date: [short-date]_[time]_[project_name]_[filename]
-        filename_with_date = f"{short_date}_{short_time}_{project_name}_{filename}" if project_name and filename else f"{short_date}_{short_time}_{filename}" if filename else f"{short_date}_{short_time}_{project_name}" if project_name else f"{short_date}_{short_time}"
+        # Build project folder name with date prefix from global state
+        project_folder = f"{date_format_folder} - {project_name}" if project_name and date_format_folder else date_format_folder if date_format_folder else project_name if project_name else ""
 
         # Combined path: main_folder/project_folder/ (just the folder path with trailing slash)
-        if main_folder and project_name:
+        if main_folder and project_folder:
             combined_path = f"{main_folder}/{project_folder}/"
         elif main_folder:
             combined_path = f"{main_folder}/"
-        elif project_name:
+        elif project_folder:
             combined_path = f"{project_folder}/"
         else:
             combined_path = ""
 
-        # path_and_filename for videos/audio: main_folder/project_folder/filename_with_date
-        if main_folder and project_name:
-            path_and_filename = f"{main_folder}/{project_folder}/{filename_with_date}"
-        elif main_folder:
-            path_and_filename = f"{main_folder}/{filename_with_date}"
+        # Build filename 1b: date_format_project_name_filename (e.g., 260322_221431_Qwen-Image-2512 - full model_01_img)
+        filename_1b = filename
+        if date_format and project_name:
+            filename_1b = f"{date_format}_{project_name}_{filename}"
+        elif date_format:
+            filename_1b = f"{date_format}_{filename}"
         elif project_name:
-            path_and_filename = f"{project_folder}/{filename_with_date}"
+            filename_1b = f"{project_name}_{filename}"
+
+        # path_and_filename for videos/audio: main_folder/project_folder/filename_1b (full filename)
+        if main_folder and project_folder:
+            path_and_filename = f"{main_folder}/{project_folder}/{filename_1b}"
+        elif main_folder:
+            path_and_filename = f"{main_folder}/{filename_1b}"
+        elif project_folder:
+            path_and_filename = f"{project_folder}/{filename_1b}"
         else:
-            path_and_filename = filename_with_date
+            path_and_filename = filename_1b
 
         # Full path with actual output directory (include main_folder in filesystem)
-        if main_folder:
+        if main_folder and project_folder:
             full_project_dir = os.path.join(output_dir, main_folder, project_folder)
-        elif project_name:
+        elif main_folder:
+            full_project_dir = os.path.join(output_dir, main_folder)
+        elif project_folder:
             full_project_dir = os.path.join(output_dir, project_folder)
         else:
             full_project_dir = output_dir
@@ -1879,16 +1899,16 @@ class save_file_path_name_sokes:
         except Exception as e:
             print(f"Warning: Could not create directory '{full_project_dir}': {e}")
 
-        full_path = os.path.join(full_project_dir, filename_with_date)
+        full_path = os.path.join(full_project_dir, filename_1b)
 
-        return (combined_path, filename_with_date, path_and_filename, full_path)
+        return (combined_path, filename_1b, path_and_filename, full_path)
 
     @classmethod
-    def IS_CHANGED(cls, main_folder, project_name, filename, date_format):
+    def IS_CHANGED(cls, main_folder, project_name, date_format, filename):
         # Include global state version to force re-execution when Global Folder and Project Settings changes
         version = _global_folder_state["_version"]
-        # Return value that changes when global state changes or time advances
-        return f"{version}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+        # Return value that changes when global state changes or inputs change
+        return f"{version}_{date_format or ''}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
 
 
 # END Save File Path and Name | Sokes 🦬
