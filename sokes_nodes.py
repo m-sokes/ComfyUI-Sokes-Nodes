@@ -1821,7 +1821,7 @@ class save_file_path_name_sokes:
         }
 
     RETURN_TYPES = ("STRING", "STRING", "STRING", "STRING")
-    RETURN_NAMES = ("combined_path 1a_img", "filename 1b_img", "path_and_filename 2_vid_audio", "full_path 3_txt")
+    RETURN_NAMES = ("combined_path 1a_img", "filename 1b_img", "path_and_filename 2_vid_audio", "full_path (no filename) 3_txt")
     FUNCTION = "execute"
 
     def execute(self, main_folder, project_name, date_format, filename):
@@ -1899,7 +1899,7 @@ class save_file_path_name_sokes:
         except Exception as e:
             print(f"Warning: Could not create directory '{full_project_dir}': {e}")
 
-        full_path = os.path.join(full_project_dir, filename_1b)
+        full_path = full_project_dir + "/"
 
         return (combined_path, filename_1b, path_and_filename, full_path)
 
