@@ -4,4 +4,5 @@ Pillow
 opencv-python
 numpy
 requests>=2.31.0
+standard-imghdr
 #math #included already
