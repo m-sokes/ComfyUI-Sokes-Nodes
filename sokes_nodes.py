@@ -889,6 +889,43 @@ class random_number_sokes:
 
 
 ##############################################################
+# START Random Line | Sokes 🦬
+
+class random_line_sokes:
+    CATEGORY = "Sokes 🦬"
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("line",)
+    FUNCTION = "pick_line"
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "text": ("STRING", {"default": "line one\nline two\nline three", "multiline": True}),
+                "seed": ("INT", {"default": 1, "min": 0, "max": 0xffffffffffffffff}),
+            }
+        }
+
+    def pick_line(self, text, seed):
+        lines = [line.strip() for line in (text or "").splitlines()]
+        lines = [line for line in lines if line]
+        if not lines:
+            print("sokes_nodes.py Random Line: No non-empty lines found in text. Returning empty string.")
+            return ("",)
+        index = (int(seed) - 1) % len(lines)
+        return (lines[index],)
+
+    @classmethod
+    def IS_CHANGED(cls, text, seed):
+        h = hashlib.sha256()
+        h.update(f"text:{text}-seed:{seed}".encode('utf-8'))
+        return h.hexdigest()
+
+# END Random Line | Sokes 🦬
+##############################################################
+
+
+##############################################################
 # START Generate Random Background | Sokes 🦬
 class random_art_generator_sokes:
     CATEGORY = "Sokes 🦬/Generators"
@@ -1930,6 +1967,7 @@ NODE_CLASS_MAPPINGS = {
     "Latent Switch x9 | sokes 🦬": latent_input_switch_9x_sokes,
     "Load Random Image | sokes 🦬": load_random_image_sokes,
     "Random Hex Color | sokes 🦬": random_hex_color_sokes,
+    "Random Line | sokes 🦬": random_line_sokes,
     "Random Number | sokes 🦬": random_number_sokes,
     "Replace Text with RegEx | sokes 🦬": replace_text_regex_sokes,
     "Save File Path and Name | sokes 🦬": save_file_path_name_sokes,
@@ -1949,6 +1987,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "Latent Switch x9 | sokes 🦬": "Latent Switch x9 🦬",
     "Load Random Image | sokes 🦬": "Load Random Image 🦬",
     "Random Hex Color | sokes 🦬": "Random Hex Color 🦬",
+    "Random Line | sokes 🦬": "Random Line 🦬",
     "Random Number | sokes 🦬": "Random Number 🦬",
     "Replace Text with RegEx | sokes 🦬": "Replace Text with RegEx 🦬",
     "Save File Path and Name | sokes 🦬": "Save File Path and Name 🦬",
