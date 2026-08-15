@@ -893,8 +893,8 @@ class random_number_sokes:
 
 class random_line_sokes:
     CATEGORY = "Sokes 🦬"
-    RETURN_TYPES = ("STRING",)
-    RETURN_NAMES = ("line",)
+    RETURN_TYPES = ("STRING", "INT")
+    RETURN_NAMES = ("line", "count")
     FUNCTION = "pick_line"
 
     @classmethod
@@ -911,9 +911,9 @@ class random_line_sokes:
         lines = [line for line in lines if line]
         if not lines:
             print("sokes_nodes.py Random Line: No non-empty lines found in text. Returning empty string.")
-            return ("",)
+            return ("", 0)
         index = (int(seed) - 1) % len(lines)
-        return (lines[index],)
+        return (lines[index], len(lines))
 
     @classmethod
     def IS_CHANGED(cls, text, seed):
