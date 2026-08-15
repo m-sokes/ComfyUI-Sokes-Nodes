@@ -10,7 +10,7 @@ A small node suite for ComfyUI featuring the following nodes:
 | **Global Folder and Project Settings** | Set save folder and project name <h6>Tip: Used in conjunction with Save File Path and Name node(s)</h6> |
 | **Hex to Color Name** | Convert hex to descriptive color names for image-generation prompts |
 | **Load Random Image** | Load a random image(s) and output optional alpha channel and reference image path(s)<br /><h6>Tip: You can use wildcards "*" and or "\|"'s in the folder path input</h6> |
-| **Random Line** | Picks a single line from a multiline text field based on the seed (seed 1 = first line, wraps around). The seed can be randomized or incremented. |
+| **Random Line** | Picks a single line from a multiline text field based on the seed (seed 1 = first line, wraps around). The seed can be randomized or incremented. Outputs the picked line and a count of non-empty lines. |
 | **Random Number** | A user friendly random number generator that supports int, float, and bool |
 | **Replace Text with RegEx** | Useful for using RegEx for text replacement |
 | **Runpod Serverless** | Call a Runpod serverless endpoint (text or image+text). Outputs: response_text, full_response, status, execution_time.<br /><h6>Tip: Set RUNPOD_API_KEY env var</h6> |
