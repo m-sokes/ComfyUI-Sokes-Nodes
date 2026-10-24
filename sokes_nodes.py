@@ -1763,7 +1763,7 @@ class runpod_serverless_sokes:
 _global_folder_state = {
     "main_folder": "+ Z_Image_Turbo",
     "project_name": "Z_Image_Turbo GGUF",
-    "date_format": 'datetime.now().strftime("%y%m%d_%H%M%S")',
+    "date_format": "",  # already-formatted timestamp, filled in when the Global node runs
     "_version": 0  # Version counter for change detection
 }
 
@@ -1827,6 +1827,40 @@ class global_folder_and_project_settings_sokes:
 # END Global Folder and Project Settings | Sokes 🦬
 ##############################################################
 
+DEFAULT_DATE_FORMAT = "%y%m%d_%H%M%S"
+
+
+def resolve_sokes_date(date_format):
+    """
+    Return a ready-to-use timestamp string for filenames.
+
+    - Contains strftime codes (e.g. "%y%m%d_%H%M%S")  -> formatted with now().
+    - Already-formatted timestamp (e.g. "261024_173313", comes from the Global node) -> used as is.
+    - Empty, or not date-like (e.g. a stale widget value such as "01_img") ->
+      the Global node's last formatted date if available, else now() with the default format.
+    """
+    value = (date_format or "").strip()
+
+    if "%" in value:
+        try:
+            return datetime.now().strftime(value)
+        except Exception as e:
+            print(f"[Sokes] Invalid date_format '{value}': {e}. Using default.")
+            return datetime.now().strftime(DEFAULT_DATE_FORMAT)
+
+    # A real formatted date/time always has a run of 4+ digits (2026..., 261024, 173313)
+    if value and re.search(r"\d{4,}", value):
+        return value
+
+    if value:
+        print(f"[Sokes] date_format '{value}' is not a date/time. Falling back.")
+
+    global_date = _global_folder_state.get("date_format", "")
+    if global_date and re.search(r"\d{4,}", global_date):
+        return global_date
+    return datetime.now().strftime(DEFAULT_DATE_FORMAT)
+
+
 class save_file_path_name_sokes:
     CATEGORY = "Sokes 🦬/Utilities"
 
@@ -1873,11 +1907,8 @@ class save_file_path_name_sokes:
             print(f"[Sokes] Save File Path using global project_name: '{project_name}'")
         else:
             print(f"[Sokes] Save File Path using connected project_name: '{project_name}'")
-        if not date_format:
-            date_format = datetime.now().strftime("%y%m%d_%H%M%S")
-            print(f"[Sokes] Save File Path using default date_format: '{date_format}'")
-        else:
-            print(f"[Sokes] Save File Path using date_format: '{date_format}'")
+        date_format = resolve_sokes_date(date_format)
+        print(f"[Sokes] Save File Path using date: '{date_format}'")
 
         # Get output directory from ComfyUI
         try:
